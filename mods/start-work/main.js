@@ -1,13 +1,13 @@
 // Start work: pick a Jira ticket of the repo's sprint, a GitHub issue, or type
-// a description. Makes a worktree (where the worktree mod puts them), a space
-// on it with Claude briefed, and a shell beside. Opened by mod.open:start-work.
+// a description. Makes a worktree (where the worktree mod puts them) and a space
+// on it running Claude. Opened by mod.open:start-work.
 // Jira: config.json maps repo names to project keys; acli (Atlassian's CLI,
 // logged in once with `acli jira auth login --web`) does the calls.
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, spaces, notify } from "herdr";
-import { branchFor, taskFor, existingWork } from "./lib.js";
+import { branchFor, existingWork } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -53,8 +53,6 @@ export default class StartWork extends View {
     this.issues = [];
     this.notes = { jira: [], issue: [] }; // why a source is missing
     this.src = "jira"; // the tab shown: "jira" or "issue"
-    this.claude = true;
-    this.shell = true;
     this.assign = true;
     this.busy = false;
     this.error = "";
@@ -82,7 +80,6 @@ export default class StartWork extends View {
     cx.notify();
     if (!this.repo) return;
     const config = JSON.parse((await readTextFile(`${appHome()}/mods/start-work/config.json`)) ?? "{}");
-    this.site = config.jira_site;
     this.startStatus = config.jira_start_status ?? "En cours";
     this.format = config.branch_formats?.[this.repo.name];
     const project = config.jira_projects?.[this.repo.name];
@@ -203,15 +200,15 @@ export default class StartWork extends View {
     // Take the ticket first: if Jira refuses, nothing is half made.
     if (s.kind === "jira" && !s.mine && this.assign) await this.take(s);
     await git(this.repo.main, ["worktree", "prune"]); // forget worktrees whose folder was deleted by hand
-    const has = async (ref) => (await git(this.repo.main, ["show-ref", "--verify", "--quiet", ref])).ok;
     let path = await this.checkoutOf(branch);
-    const resumed = Boolean(path) || (await has(`refs/heads/${branch}`)) || (await has(`refs/remotes/origin/${branch}`));
     if (!path) {
+      const has = async (ref) => (await git(this.repo.main, ["show-ref", "--verify", "--quiet", ref])).ok;
+      const exists = (await has(`refs/heads/${branch}`)) || (await has(`refs/remotes/origin/${branch}`));
       path = `${home()}/.herdr/worktrees/${this.repo.name}/${branch.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
       // An existing branch is checked out as is (one only on origin gets a local branch tracking it);
       // a new one starts from the remote's default branch, not from whatever is checked out here.
       let add = ["worktree", "add", path, branch];
-      if (!resumed) {
+      if (!exists) {
         const base = await git(this.repo.main, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
         add = ["worktree", "add", "--no-track", "-b", branch, path, base.ok ? base.out : "HEAD"];
       }
@@ -220,10 +217,8 @@ export default class StartWork extends View {
     }
     const open = spaces().find((sp) => sp.folder === path);
     if (open) return run("space.select", { id: open.id });
-    const resume = resumed ? { branch, pr: this.prs.find((p) => p.headRefName === branch) } : null;
     // Unnamed, so the space follows the checkout folder and nests under its repo.
-    run("space.new", { folder: path, ...(this.claude ? { tab: "claude", argv: ["claude"], task: taskFor(s, this.site, resume) } : {}) });
-    if (this.shell) run("pane.split", { direction: "right" });
+    run("space.new", { folder: path, tab: "claude", argv: ["claude"] });
   }
 
   // The folder where the branch is already checked out, if any.
@@ -349,13 +344,7 @@ export default class StartWork extends View {
           .children(this.notes[this.src].map((n) => div().px(8).text_size(11).text_color(t.dim).child(n)))
           .child(h_flex().gap(8).items_center().child(div().w(64).text_size(12).text_color(t.muted).child("Branche")).child(field(this.branch).flex_1()))
           .when(old, (l) => l.child(div().pl(72).text_size(11).text_color(t.ansi3).child(`Branche existante${pr ? ` · PR #${pr.number} ouverte` : ""} : le travail sera repris, pas recommencé.`)))
-          .child(
-            v_flex()
-              .gap(8)
-              .when(takes, (l) => l.child(this.toggle(t, "sw-take", this.assign, `M'assigner ${sel.key}${sel.todo ? " et le passer en cours" : ""}`, () => (this.assign = !this.assign))))
-              .child(this.toggle(t, "sw-claude", this.claude, "Lancer Claude avec ce travail comme consigne", () => (this.claude = !this.claude)))
-              .child(this.toggle(t, "sw-shell", this.shell, "Ouvrir un shell à droite", () => (this.shell = !this.shell))),
-          ),
+          .when(takes, (l) => l.child(this.toggle(t, "sw-take", this.assign, `M'assigner ${sel.key}${sel.todo ? " et le passer en cours" : ""}`, () => (this.assign = !this.assign)))),
       )
       .when(Boolean(this.error), (el) => el.child(div().text_color(t.blocked).child(this.error)))
       .child(
