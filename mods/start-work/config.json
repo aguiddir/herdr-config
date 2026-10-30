@@ -1,0 +1,14 @@
+{
+  "jira_site": "https://vidalgroup.atlassian.net",
+  "jira_start_status": "En cours",
+  "jira_projects": {
+    "cerner-flow": "CF",
+    "data-snap": "CATS",
+    "merlin-loader": "RUNBO",
+    "renoshield": "POSO",
+    "vidal-search-engine-manager": "HUGGY"
+  },
+  "branch_formats": {
+    "renoshield": "feat/{key}-{slug}"
+  }
+}

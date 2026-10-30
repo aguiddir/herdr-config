@@ -1,0 +1,14 @@
+# Herdr writes everything else here (window state, shipped mods and layouts,
+# generated types): only what is mine is tracked.
+/*
+!/.gitignore
+!/README.md
+!/install.sh
+!/keys.json
+!/settings.json
+!/mods/
+/mods/*
+!/mods/start-work/
+/mods/*/gpui-kit.d.ts
+/mods/*/herdr.d.ts
+/mods/*/jsconfig.json
