@@ -60,12 +60,33 @@ git fetch origin && git checkout -f main
 ./install.sh
 ```
 
-## Pour un collègue
+## Installer start-work
 
-Il ne prend que le mod, pas mes raccourcis ni mes réglages :
+Pour ajouter seulement le mod à son Herdr, sans les raccourcis ni les réglages de ce repo. Deux façons.
 
-1. copier `mods/start-work/` dans son `~/.config/herdr-app/mods/` ;
-2. ajouter `"ctrl-shift-j": "mod.open:start-work"` dans la section `global` de son `keys.json` ;
-3. lancer `install.sh` depuis un clone du repo. Il ne modifie aucun fichier de config, il installe seulement `acli` et vérifie les connexions.
+### En demandant à son agent
 
-Ou bien, dans Herdr, demander à son agent : « ajoute le mod Herdr `<url-du-repo>/tree/main/mods/start-work` ».
+Comme sur [herdr.dev/mods](https://herdr.dev/mods), on copie une ligne à son agent dans Herdr. Il suit la procédure du guide de Herdr (`~/.config/herdr-app/AGENTS.md`) : lire chaque fichier avant d'ajouter le mod, le copier sans écraser un mod du même nom, ajouter la touche en demandant avant d'en remplacer une, puis lancer `herdr-app check`.
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this mod: github.com/aguiddir/herdr-config/tree/main/mods/start-work. Bind ctrl-shift-j to mod.open:start-work. It needs gh and acli (Atlassian's CLI) logged in: run install.sh from that repo. Then ask me which of my repos map to which Jira project for its config.json.
+```
+
+### À la main
+
+
+```bash
+git clone https://github.com/aguiddir/herdr-config.git ~/herdr-config
+cp -r ~/herdr-config/mods/start-work ~/.config/herdr-app/mods/
+~/herdr-config/install.sh   # installe acli, connecte gh et acli, vérifie le mod
+```
+
+Puis ajouter le raccourci dans la section `global` de `~/.config/herdr-app/keys.json` :
+
+```json
+"ctrl-shift-j": "mod.open:start-work"
+```
+
+Pour l'onglet Jira, ajouter son repo et son projet dans `~/.config/herdr-app/mods/start-work/config.json` (voir plus haut).
+
+Pour mettre à jour : `git -C ~/herdr-config pull`, puis refaire le `cp`. Il remplace `config.json` : y remettre ses repos s'il en a ajouté.
