@@ -44,18 +44,6 @@ if command -v acli >/dev/null; then
   fi
 fi
 
-# Herdr starts an agent with its first message as `$SHELL -ic '"$@"' … claude <message>`.
-# A shell rc that execs another shell unconditionally swallows the message.
-echo "Shell"
-case $(basename "${SHELL:-}") in
-  bash | zsh)
-    if timeout 10 "$SHELL" -ic '"$@"; exit' "$SHELL" echo herdr-ok </dev/null 2>/dev/null | grep -q herdr-ok; then
-      ok "$SHELL lance les commandes que Herdr lui passe"
-    else
-      ko "$SHELL -ic n'exécute pas la commande : Claude démarrerait sans sa consigne. Dans ~/.bashrc, n'exécute zsh que si [ -z \"\$BASH_EXECUTION_STRING\" ]"
-    fi ;;
-esac
-
 echo "Mods"
 if command -v herdr-app >/dev/null; then
   # Only this repo's mods: the folder also holds the ones Herdr ships.

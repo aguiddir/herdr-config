@@ -1,6 +1,6 @@
 // node mods/start-work/lib.test.mjs
 import assert from "node:assert/strict";
-import { slug, branchFor, taskFor, existingWork } from "./lib.js";
+import { slug, branchFor, existingWork } from "./lib.js";
 
 assert.equal(slug("🐛 Data comparison fails on a column présent"), "data-comparison-fails-on-a-column-present");
 assert.equal(slug("x".repeat(30) + " " + "y".repeat(30)), "x".repeat(30));
@@ -8,7 +8,6 @@ assert.equal(branchFor({ kind: "jira", key: "CF-12", title: "Corriger l'export" 
 assert.equal(branchFor({ kind: "jira", key: "POSO-110", title: "Version actuelle" }, "feat/{key}-{slug}"), "feat/poso-110-version-actuelle");
 assert.equal(branchFor({ kind: "issue", number: 277, title: "⚡️ Skip key ranges" }), "277-skip-key-ranges");
 assert.equal(branchFor({ kind: "free", title: "refacto du cache" }), "refacto-du-cache");
-assert.ok(!taskFor({ kind: "issue", number: 1, title: "a", url: "u" }).includes("\n"));
 const prs = [
   { number: 200, headRefName: "release/2.3", title: "Release 2.3: POSO-97, POSO-98", url: "u200" },
   { number: 164, headRefName: "feat/poso-98-current-version-pane", title: "✨ POSO-97: Show the current version", url: "u164" },
@@ -23,5 +22,4 @@ assert.equal(existingWork(jira("POSO-9"), branches, prs).branch, "feat/poso-9-so
 assert.equal(existingWork(jira("POSO-2"), branches, prs), null);
 assert.equal(existingWork({ kind: "issue", number: 277, title: "t" }, branches, prs).branch, "277-skip-key-ranges");
 assert.equal(existingWork({ kind: "issue", number: 27, title: "t" }, branches, prs), null);
-assert.ok(taskFor(jira("POSO-98"), "s", { branch: "b", pr: prs.find((p) => p.number === 152) }).includes("PR #152"));
 console.log("ok");

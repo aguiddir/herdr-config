@@ -1,5 +1,4 @@
 {
-  "jira_site": "https://vidalgroup.atlassian.net",
   "jira_start_status": "En cours",
   "jira_projects": {
     "cerner-flow": "CF",
