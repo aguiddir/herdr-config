@@ -1,12 +1,9 @@
 {
-  "jira_start_status": "En cours",
-  "jira_projects": {
-    "cerner-flow": "CF",
-    "data-snap": "CATS",
-    "merlin-loader": "RUNBO",
-    "renoshield": "POSO",
-    "vidal-search-engine-manager": "HUGGY"
+  "jira": {
+    "renoshield": "https://vidalgroup.atlassian.net/jira/software/projects/POSO/boards/1802",
+    "data-bridge": "labels=DATABRIDGE"
   },
+  "jira_start_status": "En cours",
   "branch_formats": {
     "renoshield": "feat/{key}-{slug}"
   }

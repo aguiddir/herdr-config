@@ -6,8 +6,8 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, spaces, notify } from "herdr";
-import { branchFor, existingWork } from "./lib.js";
+import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, notify } from "herdr";
+import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -32,6 +32,7 @@ async function acli(args) {
 }
 
 const FIELDS = "key,summary,status,assignee";
+const CONFIG = () => `${appHome()}/mods/start-work/config.json`;
 
 const ticket = (i, me) => ({
   kind: "jira",
@@ -67,6 +68,9 @@ export default class StartWork extends View {
     this.prs = []; // open ones
     this.found = {}; // tickets fetched by their exact key, outside the sprint
     this.ready = false; // branches and PRs loaded: before, Créer can't tell new work from work under way
+    this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10782 · labels = DATADELTA" });
+    this.sourceInput.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
+    this.editing = null; // the source being edited, by index; null: a new one
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
@@ -79,13 +83,16 @@ export default class StartWork extends View {
     try { this.repo = await repoOf(cwd); } catch (e) { this.repo = null; this.error = String(e); }
     cx.notify();
     if (!this.repo) return;
-    const config = JSON.parse((await readTextFile(`${appHome()}/mods/start-work/config.json`)) ?? "{}");
+    const config = JSON.parse((await readTextFile(CONFIG())) ?? "{}");
     this.startStatus = config.jira_start_status ?? "En cours";
     this.format = config.branch_formats?.[this.repo.name];
-    const project = config.jira_projects?.[this.repo.name];
-    if (!project) { this.src = "issue"; this.notes.jira.push(`Pas de projet Jira pour ${this.repo.name} dans config.json`); }
+    const named = config.jira?.[this.repo.name]; // as the person gave them
+    this.named = named == null ? [] : [].concat(named);
+    this.adding = !this.named.length; // the Jira tab asks where the tickets are
+    if (!this.named.length) this.src = "issue";
+    const tickets = async () => this.named.length && this.loadTickets();
     const show = async (loading) => { await loading; this.sync(); cx.notify(); };
-    await Promise.all([show(this.loadIssues()), project ? show(this.loadTickets(project)) : null, this.loadWork()]);
+    await Promise.all([show(this.loadIssues()), show(tickets()), this.loadWork()]);
     this.ready = true;
     this.branchOf = null; // refill the field: the chosen row may have work under way
     this.sync();
@@ -107,14 +114,111 @@ export default class StartWork extends View {
     this.issues = JSON.parse(r.stdout).map((i) => ({ kind: "issue", id: `issue-${i.number}`, number: i.number, title: i.title.replace(/^[\p{Extended_Pictographic}️\s]+/u, ""), url: i.url })); // gitmoji: no glyph in the UI font
   }
 
-  async loadTickets(project) {
-    try {
-      this.me = (await acli(["auth", "status"])).match(/Email:\s*(\S+)/)?.[1]?.toLowerCase();
-      const jql = `project = ${project} AND sprint in openSprints() AND statusCategory != Done ORDER BY updated DESC`;
-      const r = JSON.parse(await acli(["workitem", "search", "--jql", jql, "--fields", FIELDS, "--limit", "50", "--json"]));
-      const order = (t) => (t.mine ? 0 : t.who ? 2 : 1); // mine, then nobody's, then others'
-      this.tickets = r.map((i) => ticket(i, this.me)).sort((a, b) => order(a) - order(b));
-    } catch (e) { this.notes.jira.push(String(e.message ?? e)); }
+  // Every source's open tickets, once each, mine first.
+  async loadTickets() {
+    this.notes.jira = [];
+    const found = new Map();
+    try { this.me = (await acli(["auth", "status"])).match(/Email:\s*(\S+)/)?.[1]?.toLowerCase(); }
+    catch (e) { return this.notes.jira.push(String(e.message ?? e)); }
+    for (const text of this.named) {
+      const source = ticketSource(text);
+      try {
+        const filter = source.kind === "filter" && JSON.parse(await acli(["filter", "view", "--id", source.id, "--json"]));
+        for (const jql of ticketQueries(source, filter?.jql)) {
+          const r = JSON.parse(await acli(["workitem", "search", "--jql", jql, "--fields", FIELDS, "--limit", "50", "--json"]));
+          for (const i of r) found.set(i.key, ticket(i, this.me));
+          if (r.length) break;
+        }
+      } catch (e) { this.notes.jira.push(`${sourceLabel(source)} : ${e.message ?? e}`); }
+    }
+    const order = (t) => (t.mine ? 0 : t.who ? 2 : 1); // mine, then nobody's, then others'
+    this.tickets = [...found.values()].sort((a, b) => order(a) - order(b));
+  }
+
+  // Where this repo's tickets are: sources the person adds, edits or removes in the
+  // Jira tab, kept in config.json (one string, or a list).
+  async setSources(named, cx) {
+    const before = await readTextFile(CONFIG());
+    const config = JSON.parse(before ?? "{}");
+    config.jira = { ...config.jira, [this.repo.name]: named.length === 1 ? named[0] : named };
+    if (!named.length) delete config.jira[this.repo.name];
+    await writeTextFile(CONFIG(), JSON.stringify(config, null, 2) + "\n", before);
+    this.named = named;
+    this.tickets = [];
+    cx.notify();
+    if (named.length) await this.loadTickets();
+    this.sync();
+    cx.notify();
+  }
+
+  async submitSource(cx) {
+    const text = this.sourceInput.value().trim();
+    if (!ticketSource(text)) {
+      this.sourceError = "acli ne lit pas les tickets d'un board qui n'appartient pas à un projet. Colle le lien de son filtre : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre, puis copie l'adresse (…/issues/?filter=…).";
+      return cx.notify();
+    }
+    const named = [...this.named];
+    if (this.editing === null) named.push(text);
+    else named[this.editing] = text;
+    this.closeSourceInput();
+    await this.setSources(named, cx);
+  }
+
+  openSourceInput(index) {
+    this.editing = index ?? null;
+    this.adding = true;
+    this.sourceInput.set_value(index === undefined ? "" : this.named[index]);
+    this.sourceInput.focus();
+  }
+
+  closeSourceInput() {
+    this.adding = false;
+    this.editing = null;
+    this.sourceError = "";
+    this.sourceInput.set_value("");
+  }
+
+  // The Jira tab's sources: one chip each (click: edit, ×: remove), then « + ajouter ».
+  sources(t, field) {
+    const chip = (text, i) =>
+      h_flex()
+        .id(`sw-src-${i}`)
+        .flex_none()
+        .h(22)
+        .px(8)
+        .gap(6)
+        .items_center()
+        .rounded(11)
+        .bg(t.raised)
+        .child(div().id(`sw-src-edit-${i}`).max_w(300).truncate().cursor_pointer().text_color(t.foreground).on_click((_e, cx) => { this.openSourceInput(i); cx.notify(); }).child(sourceLabel(ticketSource(text))))
+        .child(div().id(`sw-src-del-${i}`).cursor_pointer().text_color(t.dim).on_click((_e, cx) => cx.spawn(async (cx) => this.setSources(this.named.filter((_, j) => j !== i), cx))).child("×"));
+    return v_flex()
+      .gap(6)
+      .px(8)
+      .text_size(11)
+      .when(this.named.length > 0, (c) =>
+        c.child(
+          h_flex()
+            .flex_wrap()
+            .gap(6)
+            .items_center()
+            .child(div().text_color(t.dim).child("Tickets de :"))
+            .children(this.named.map(chip))
+            .when(!this.adding, (r) => r.child(div().id("sw-src-add").cursor_pointer().text_color(t.accent).on_click((_e, cx) => { this.openSourceInput(); cx.notify(); }).child("+ ajouter"))),
+        ),
+      )
+      .when(this.adding, (c) =>
+        c
+          .when(!this.named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${this.repo.name} ? Colle le lien d'un board de projet ou d'un filtre Jira, une clé de projet, ou du JQL. C'est gardé dans config.json.`)))
+          .child(
+            h_flex()
+              .gap(8)
+              .items_center()
+              .child(field(this.sourceInput).flex_1())
+              .when(this.named.length > 0, (x) => x.child(div().id("sw-src-cancel").cursor_pointer().text_color(t.dim).on_click((_e, cx) => { this.closeSourceInput(); cx.notify(); }).child("annuler"))),
+          )
+          .when(Boolean(this.sourceError), (x) => x.child(div().text_color(t.blocked).child(this.sourceError))),
+      );
   }
 
   // A key typed exactly that isn't in the sprint: fetch it from all of Jira.
@@ -327,11 +431,12 @@ export default class StartWork extends View {
             h_flex()
               .gap(4)
               .items_center()
-              .child(tab("jira", "Jira · sprint"))
+              .child(tab("jira", "Jira"))
               .child(tab("issue", `GitHub · ${this.repo.name}`))
               .child(div().flex_1())
               .child(div().text_size(11).text_color(t.dim).child("tab pour changer")),
           )
+          .when(this.src === "jira", (l) => l.child(this.sources(t, field)))
           .child(
             v_flex()
               .flex_1()
@@ -340,7 +445,7 @@ export default class StartWork extends View {
               .child(v_virtual_list("sw-list", rows.length, 30, (i) => rows[i].id, (range) => rows.slice(range.start, range.end).map(row)).track_scroll(this.scroll).on_item_click((id, cx) => { this.at = Math.max(0, rows.findIndex((r) => r.id === id)); this.sync(); cx.notify(); }).size_full())
               .child(Scrollbar.vertical("sw-list").absolute().inset_0()),
           )
-          .when(rows.length === 0 && !this.notes[this.src].length, (l) => l.child(div().p(8).text_color(t.dim).child(this.text ? "Rien ne correspond." : "Chargement…")))
+          .when(rows.length === 0 && !this.notes[this.src].length && (this.src !== "jira" || this.named.length > 0), (l) => l.child(div().p(8).text_color(t.dim).child(this.text ? "Rien ne correspond." : "Chargement…")))
           .children(this.notes[this.src].map((n) => div().px(8).text_size(11).text_color(t.dim).child(n)))
           .child(h_flex().gap(8).items_center().child(div().w(64).text_size(12).text_color(t.muted).child("Branche")).child(field(this.branch).flex_1()))
           .when(old, (l) => l.child(div().pl(72).text_size(11).text_color(t.ansi3).child(`Branche existante${pr ? ` · PR #${pr.number} ouverte` : ""} : le travail sera repris, pas recommencé.`)))
