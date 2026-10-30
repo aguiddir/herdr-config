@@ -17,7 +17,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 |---|---|
 | ![Onglet Jira](mods/start-work/preview.png) | ![Onglet GitHub](mods/start-work/preview-github.png) |
 
-- l'onglet **Jira** liste les tickets du sprint ouvert du projet lié au repo : d'abord les miens, puis ceux sans personne, puis ceux des autres. Une clé tapée en entier (`POSO-110`) est cherchée dans tout Jira ;
+- l'onglet **Jira** liste les tickets ouverts du repo (voir plus bas d'où ils viennent) : d'abord les miens, puis ceux sans personne, puis ceux des autres. Une clé tapée en entier (`POSO-110`) est cherchée dans tout Jira ;
 - l'onglet **GitHub** liste les issues ouvertes du repo ;
 - `tab` passe d'un onglet à l'autre. Taper `#12` ouvre GitHub, une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
 
@@ -25,10 +25,18 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 
 Si le ticket a déjà une branche ou une PR ouverte, le bouton devient **Reprendre** : il ouvre cette branche au lieu d'en créer une, ou affiche l'espace qui est déjà dessus.
 
-`mods/start-work/config.json` donne le projet Jira de chaque repo et, pour certains repos, le format des branches :
+La première fois qu'on ouvre un repo, l'onglet Jira demande où sont ses tickets, et la réponse est gardée dans `mods/start-work/config.json`. Un repo peut en avoir plusieurs : sous les onglets, « Tickets de : » les liste. Un clic sur l'un le modifie, × le retire, « + ajouter » en ajoute un, et leurs tickets s'affichent ensemble. On peut donner :
+
+| Réponse | Tickets montrés |
+|---|---|
+| le lien d'un board de projet (`…/projects/POSO/boards/1802`) ou la clé (`POSO`) | ceux du sprint ouvert du projet, ou tous ses tickets ouverts s'il n'a pas de sprint (kanban) |
+| le lien d'un filtre (`…/issues/?filter=10782`) | les tickets ouverts du filtre |
+| du JQL (`labels = DATADELTA`) | les tickets ouverts qu'il trouve |
+
+On choisit le board qu'on veut. Pour un board qui n'appartient pas à un projet (Table Ronde : `…/people/…/boards/96`), on colle le lien de son filtre, ce sont les mêmes tickets : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre. acli ne sait pas retrouver ce filtre à partir du board. Pour n'avoir que la part d'un repo dans un grand board, du JQL suffit (`labels = DATADELTA`). `config.json` donne aussi le format des branches de certains repos :
 
 ```json
-"jira_projects": { "renoshield": "POSO" },
+"jira": { "renoshield": "https://vidalgroup.atlassian.net/jira/software/projects/POSO/boards/1802", "data-delta": ["labels = DATADELTA", "https://vidalgroup.atlassian.net/issues/?filter=10782"] },
 "branch_formats": { "renoshield": "feat/{key}-{slug}" }
 ```
 
