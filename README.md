@@ -77,7 +77,7 @@ Pour ajouter seulement le mod à son Herdr, sans les raccourcis ni les réglages
 Comme sur [herdr.dev/mods](https://herdr.dev/mods), on copie une ligne à son agent dans Herdr. Il suit la procédure du guide de Herdr (`~/.config/herdr-app/AGENTS.md`) : lire chaque fichier avant d'ajouter le mod, le copier sans écraser un mod du même nom, ajouter la touche en demandant avant d'en remplacer une, puis lancer `herdr-app check`.
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add this mod: github.com/aguiddir/herdr-config/tree/main/mods/start-work. Bind ctrl-shift-j to mod.open:start-work. It needs gh and acli (Atlassian's CLI) logged in: run install.sh from that repo. Then ask me which of my repos map to which Jira project for its config.json.
+Read ~/.config/herdr-app/AGENTS.md, then add this mod: github.com/aguiddir/herdr-config/tree/main/mods/start-work. Bind ctrl-shift-j to mod.open:start-work. It needs gh and acli (Atlassian's CLI) logged in: run install.sh from that repo.
 ```
 
 ### À la main
@@ -95,6 +95,6 @@ Puis ajouter le raccourci dans la section `global` de `~/.config/herdr-app/keys.
 "ctrl-shift-j": "mod.open:start-work"
 ```
 
-Pour l'onglet Jira, ajouter son repo et son projet dans `~/.config/herdr-app/mods/start-work/config.json` (voir plus haut).
+Le premier lancement dans un repo, l'onglet Jira demande où sont ses tickets (voir plus haut).
 
-Pour mettre à jour : `git -C ~/herdr-config pull`, puis refaire le `cp`. Il remplace `config.json` : y remettre ses repos s'il en a ajouté.
+Pour mettre à jour : `git -C ~/herdr-config pull`, puis refaire le `cp`. Il remplace `config.json` : les sources de tickets données dans l'onglet Jira seront à redonner.
