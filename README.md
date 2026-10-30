@@ -13,6 +13,10 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 
 `ctrl-shift-j`, depuis un terminal ouvert dans un repo :
 
+| Jira : POSO-90 a déjà sa branche et sa PR, Créer devient Reprendre | GitHub : les issues du repo |
+|---|---|
+| ![Onglet Jira](mods/start-work/preview.png) | ![Onglet GitHub](mods/start-work/preview-github.png) |
+
 - l'onglet **Jira** liste les tickets du sprint ouvert du projet lié au repo : d'abord les miens, puis ceux sans personne, puis ceux des autres. Une clé tapée en entier (`POSO-110`) est cherchée dans tout Jira ;
 - l'onglet **GitHub** liste les issues ouvertes du repo ;
 - `tab` passe d'un onglet à l'autre. Taper `#12` ouvre GitHub, une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
