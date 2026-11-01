@@ -48,6 +48,8 @@ Dans un format, `{KEY}` vaut `POSO-12`, `{key}` vaut `poso-12` et `{slug}` est l
 
 `ctrl-shift-m`, depuis un terminal ouvert dans un repo, liste ses branches locales dont la PR GitHub est mergée. `↵` supprime celles qui sont cochées, avec leur worktree et l'espace Herdr ouvert dessus.
 
+![Panneau des branches mergées](mods/clean-merged/preview.png)
+
 - cochées d'office : tous leurs commits sont dans la PR. Les squash merges sont gérés : la branche est comparée au head de la PR, pas à `main` ;
 - décochées : la branche a des commits absents de la PR (travail ajouté après le merge, ou branche rebasée depuis). On peut les cocher quand même ;
 - grisées : le worktree a des changements non commités, un agent y travaille, ou un terminal y est ouvert depuis un espace qui a aussi des terminaux ailleurs (à fermer soi-même).
