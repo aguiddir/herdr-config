@@ -8,7 +8,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `settings.json` | mes réglages |
 | `mods/start-work/` | la fenêtre « Commencer un travail » |
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
-| `clean-merged.sh` | supprime les branches et worktrees des PR mergées |
+| `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
 
 ## start-work
 
@@ -45,7 +45,13 @@ Dans un format, `{KEY}` vaut `POSO-12`, `{key}` vaut `poso-12` et `{slug}` est l
 
 ## clean-merged
 
-Depuis un repo, `~/.config/herdr-app/clean-merged.sh` liste les branches locales dont la PR GitHub est mergée, et `--yes` les supprime avec leur worktree et l'espace Herdr ouvert dessus. Il garde une branche qui a des commits absents de la PR (travail ajouté après le merge, ou branche rebasée depuis), et un worktree qui a des changements non commités. Il gère les squash merges : il compare la branche au head de la PR, pas à `main`.
+`ctrl-shift-m`, depuis un terminal ouvert dans un repo, liste ses branches locales dont la PR GitHub est mergée. `↵` supprime celles qui sont cochées, avec leur worktree et l'espace Herdr ouvert dessus.
+
+- cochées d'office : tous leurs commits sont dans la PR. Les squash merges sont gérés : la branche est comparée au head de la PR, pas à `main` ;
+- décochées : la branche a des commits absents de la PR (travail ajouté après le merge, ou branche rebasée depuis). On peut les cocher quand même ;
+- grisées : le worktree a des changements non commités, ou un agent travaille dans son espace.
+
+La branche par défaut et celle du checkout principal ne sont jamais proposées.
 
 ## Prérequis
 
