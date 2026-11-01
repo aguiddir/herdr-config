@@ -4,12 +4,12 @@
 !/.gitignore
 !/README.md
 !/install.sh
-!/clean-merged.sh
 !/keys.json
 !/settings.json
 !/mods/
 /mods/*
 !/mods/start-work/
+!/mods/clean-merged/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
