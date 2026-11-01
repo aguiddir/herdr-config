@@ -8,6 +8,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `settings.json` | mes réglages |
 | `mods/start-work/` | la fenêtre « Commencer un travail » |
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
+| `clean-merged.sh` | supprime les branches et worktrees des PR mergées |
 
 ## start-work
 
@@ -41,6 +42,10 @@ On choisit le board qu'on veut. Pour un board qui n'appartient pas à un projet 
 ```
 
 Dans un format, `{KEY}` vaut `POSO-12`, `{key}` vaut `poso-12` et `{slug}` est le titre du ticket. Sans format, une branche s'appelle `POSO-12-titre`.
+
+## clean-merged
+
+Depuis un repo, `~/.config/herdr-app/clean-merged.sh` liste les branches locales dont la PR GitHub est mergée, et `--yes` les supprime avec leur worktree et l'espace Herdr ouvert dessus. Il garde une branche qui a des commits absents de la PR (travail ajouté après le merge, ou branche rebasée depuis), et un worktree qui a des changements non commités. Il gère les squash merges : il compare la branche au head de la PR, pas à `main`.
 
 ## Prérequis
 
