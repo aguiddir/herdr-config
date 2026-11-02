@@ -9,6 +9,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `mods/start-work/` | la fenêtre « Commencer un travail » |
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
+| `mods/cockpit/` | tous les Claude sur un écran, ceux qui m'attendent en premier, avec leur dernière phrase (`ctrl-shift-a`) |
 
 ## start-work
 
@@ -57,6 +58,21 @@ Dans un format, `{KEY}` vaut `POSO-12`, `{key}` vaut `poso-12` et `{slug}` est l
 La branche par défaut, celle du checkout principal et celles dans lesquelles une PR a été mergée (`develop`, `release/…`) ne sont jamais proposées, ni les branches des PR venues d'un fork. Une branche qui a changé depuis l'ouverture du panneau n'est pas supprimée.
 
 Les espaces fermés sont ceux dont tous les terminaux sont dans le worktree. Le worktree est retiré sans `--force`, mais ses fichiers ignorés par git (un `.env`, par exemple) partent avec lui. Une branche supprimée ne se retrouve pas dans le reflog : seulement par `git fsck --unreachable`, tant que git n'a pas fait le ménage.
+
+## cockpit
+
+`ctrl-shift-a` : chaque Claude ouvert sur une carte, en trois sections, nommées comme dans la barre latérale de Herdr. **Needs you** (`blocked` ou `done`) en premier, puis **Working**, puis **Idle**. Une carte donne l'espace, la branche, depuis combien de temps l'agent est dans cet état, et son dernier message, ou ce qu'il fait en ce moment s'il travaille.
+
+Un dernier message peut être long : la carte en montre le début (260 caractères, sans le markdown) et, s'il a été coupé et que le message finit par une question, cette question à la suite. Le reste se lit dans le terminal.
+
+![Cockpit](mods/cockpit/preview.png)
+
+- `↑↓` choisit une carte, `↵` ouvre son terminal, `esc` ferme ;
+- un agent qui a posé une question avec des choix (`AskUserQuestion`) les affiche en boutons : `1`-`9` ou un clic répond sans ouvrir le terminal ;
+- un agent inactif ou terminé a un champ « Répondre… » : le texte lui est envoyé comme un message ;
+- un agent bloqué sur autre chose qu'une question (une permission, un dialogue) ne se pilote que depuis son terminal.
+
+La dernière phrase vient du transcript de la session Claude, sans hook : herdr-core connaît le processus au premier plan du terminal, Claude écrit `~/.claude/sessions/<pid>.json` qui nomme la session, et la fin de `~/.claude/projects/<dossier>/<session>.jsonl` donne le dernier message, l'heure du dernier tour et la question en attente. Seulement les Claude de cette machine.
 
 ## Prérequis
 
