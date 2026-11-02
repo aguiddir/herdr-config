@@ -11,8 +11,8 @@ import { run, props, closeOverlay, theme, agents, panes, terminals, hc, exec, re
 import { transcriptPath, lastWords, brief, ago } from "./lib.js";
 
 const RANK = { blocked: 3, done: 3, working: 2, idle: 1 };
-const SECTION = { 3: "Besoin de toi", 2: "En cours", 1: "Inactifs" };
-const STATE = { blocked: "bloqué", done: "terminé", working: "travaille", idle: "inactif" };
+// Statuses and sections as Herdr's own sidebar names them.
+const SECTION = { 3: "Needs you", 2: "Working", 1: "Idle" };
 
 export default class Cockpit extends View {
   init(_props, cx) {
@@ -125,7 +125,7 @@ export default class Cockpit extends View {
         .when(a.tab_name !== a.space_name && !/^\d+$/.test(a.tab_name), (el) => el.child(div().text_color(t.muted).truncate().child(a.tab_name)))
         .child(div().flex_1())
         .when(Boolean(a.branch), (el) => el.child(div().flex_none().px(7).h(20).rounded(5).bg(t.background).text_size(11.5).text_color(t.muted).flex().items_center().child(a.branch)))
-        .child(div().flex_none().text_size(12).text_color(color(a)).child(`${STATE[a.status]}${w.at && a.status !== "working" ? ` depuis ${ago(now - w.at)}` : ""}`));
+        .child(div().flex_none().text_size(12).text_color(color(a)).child(`${a.status}${w.at && a.status !== "working" ? ` for ${ago(now - w.at)}` : ""}`));
       const body = urgent || on;
       const shown = a.status === "working" ? a.msg : q ? q.question : w.text;
       return v_flex()

@@ -58,7 +58,9 @@ La branche par défaut et celle du checkout principal ne sont jamais proposées.
 
 ## cockpit
 
-`ctrl-shift-a` : chaque Claude ouvert sur une carte, en trois sections. **Besoin de toi** (bloqué ou terminé) en premier, puis **En cours**, puis **Inactifs**. Une carte donne l'espace, la branche, depuis combien de temps l'agent est dans cet état, et sa dernière phrase, ou ce qu'il fait en ce moment s'il travaille.
+`ctrl-shift-a` : chaque Claude ouvert sur une carte, en trois sections, nommées comme dans la barre latérale de Herdr. **Needs you** (`blocked` ou `done`) en premier, puis **Working**, puis **Idle**. Une carte donne l'espace, la branche, depuis combien de temps l'agent est dans cet état, et son dernier message, ou ce qu'il fait en ce moment s'il travaille.
+
+Un dernier message peut être long : la carte en montre le début (260 caractères, sans le markdown) et, s'il a été coupé et que le message finit par une question, cette question à la suite. Le reste se lit dans le terminal.
 
 ![Cockpit](mods/cockpit/preview.png)
 

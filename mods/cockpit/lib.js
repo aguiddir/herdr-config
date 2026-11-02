@@ -37,16 +37,22 @@ export function lastWords(tail) {
   return { text, at, question };
 }
 
-// A paragraph for a card: markdown noise out, one space between words, cut at `max`.
-export function brief(text, max = 320) {
-  const s = (text ?? "").replace(/```[\s\S]*?```/g, " ").replace(/^[#>\-*\d.]+\s+/gm, "").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
-  return s.length > max ? `${s.slice(0, max - 1).replace(/\s\S*$/, "")}…` : s;
+// A message as a card shows it: markdown noise out, one space between words, its start cut at
+// `max`. A long message that ends on a question keeps that question after the cut: it is
+// usually what the agent wants from me, and the start alone would hide it.
+export function brief(text, max = 260) {
+  const clean = (s) => s.replace(/^[#>\-*\d.]+\s+/gm, "").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1).replace(/\s\S*$/, "")}…` : s);
+  const paras = (text ?? "").replace(/```[\s\S]*?```/g, " ").split(/\n\s*\n/).map(clean).filter(Boolean);
+  const head = cut(paras.join(" "), max);
+  const last = paras[paras.length - 1] ?? "";
+  return head.endsWith("…") && paras.length > 1 && last.endsWith("?") ? `${head} ${cut(last, 200)}` : head;
 }
 
 export function ago(ms) {
   const m = Math.floor(ms / 60000);
-  if (m < 1) return "à l'instant";
+  if (m < 1) return "just now";
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
-  return h < 24 ? `${h} h` : `${Math.floor(h / 24)} j`;
+  return h < 24 ? `${h} h` : `${Math.floor(h / 24)} d`;
 }

@@ -32,7 +32,12 @@ assert.equal(lastWords("").text, null);
 
 assert.equal(brief("## Titre\n\n- **gras** et `code`\n\n```js\nx\n```\n\n1. fin"), "Titre gras et code fin");
 assert.equal(brief("a".repeat(10) + " " + "b".repeat(400), 20), "aaaaaaaaaa…");
-assert.equal(ago(30000), "à l'instant");
+// Cut, and ending on a question: the question follows the cut. Not cut, or no question: the start only.
+assert.equal(brief("Premier point long.\n\nDeuxième point.\n\nJe supprime l'endpoint ?", 24), "Premier point long.… Je supprime l'endpoint ?");
+assert.equal(brief("Premier point long.\n\nDeuxième point.\n\nC'est fait.", 24), "Premier point long.…");
+assert.equal(brief("Court.\n\nJe supprime ?"), "Court. Je supprime ?");
+assert.equal(ago(30000), "just now");
 assert.equal(ago(12 * 60000), "12 min");
 assert.equal(ago(2 * 3600000), "2 h");
+assert.equal(ago(3 * 86400000), "3 d");
 console.log("ok");
