@@ -59,7 +59,8 @@
     "f2": "tab.rename",
     "shift-f2": "space.rename",
     "ctrl-shift-j": "mod.open:start-work",
-    "ctrl-shift-m": "mod.open:clean-merged"
+    "ctrl-shift-m": "mod.open:clean-merged",
+    "ctrl-shift-a": "mod.open:cockpit"
   },
   "terminal": {
     "ctrl-backspace": "send:\u0017",

@@ -9,6 +9,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `mods/start-work/` | la fenêtre « Commencer un travail » |
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
+| `mods/cockpit/` | tous les Claude sur un écran, ceux qui m'attendent en premier, avec leur dernière phrase (`ctrl-shift-a`) |
 
 ## start-work
 
@@ -54,6 +55,19 @@ Dans un format, `{KEY}` vaut `POSO-12`, `{key}` vaut `poso-12` et `{slug}` est l
 - grisées : le worktree a des changements non commités, ou un agent travaille dans son espace.
 
 La branche par défaut et celle du checkout principal ne sont jamais proposées.
+
+## cockpit
+
+`ctrl-shift-a` : chaque Claude ouvert sur une carte, en trois sections. **Besoin de toi** (bloqué ou terminé) en premier, puis **En cours**, puis **Inactifs**. Une carte donne l'espace, la branche, depuis combien de temps l'agent est dans cet état, et sa dernière phrase, ou ce qu'il fait en ce moment s'il travaille.
+
+![Cockpit](mods/cockpit/preview.png)
+
+- `↑↓` choisit une carte, `↵` ouvre son terminal, `esc` ferme ;
+- un agent qui a posé une question avec des choix (`AskUserQuestion`) les affiche en boutons : `1`-`9` ou un clic répond sans ouvrir le terminal ;
+- un agent inactif ou terminé a un champ « Répondre… » : le texte lui est envoyé comme un message ;
+- un agent bloqué sur autre chose qu'une question (une permission, un dialogue) ne se pilote que depuis son terminal.
+
+La dernière phrase vient du transcript de la session Claude, sans hook : herdr-core connaît le processus au premier plan du terminal, Claude écrit `~/.claude/sessions/<pid>.json` qui nomme la session, et la fin de `~/.claude/projects/<dossier>/<session>.jsonl` donne le dernier message, l'heure du dernier tour et la question en attente. Seulement les Claude de cette machine.
 
 ## Prérequis
 
