@@ -249,7 +249,8 @@ export default class PrInbox extends View {
     const w = this.where[r.key];
     if (!w || w.loading) return "";
     if (w.error) return w.error;
-    const then = r.section === "review" ? `lance claude en review de la PR #${r.number}` : `lance claude avec les ${r.remarks} remarques`;
+    // A fork's code is someone else's: Claude starts in it, its .claude settings and hooks included.
+    const then = (r.section === "review" ? `lance claude en review de la PR #${r.number}` : `lance claude avec les ${r.remarks} remarques`) + (r.fork ? " — PR d'un fork : Claude démarre dans le code de quelqu'un d'autre, ses hooks compris" : "");
     if (!w.repo) return `↵ demande où est le dépôt ${r.repo} sur cette machine, puis ${then}.`;
     const b = r.branch ? branchOf(r) : "?";
     if (w.open) return `↵ ouvre l'espace « ${w.open.space.name} » (déjà ouvert sur ${b}), puis ${then}.`;
