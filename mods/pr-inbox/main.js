@@ -8,8 +8,8 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify } from "herdr";
-import { rowsOf, fresh, toastFor, sub, dotOf, ago, SECTIONS, prOf } from "./lib.js";
+import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings } from "herdr";
+import { rowsOf, fresh, toastFor, sub, dotOf, ago, SECTIONS, prOf, threads, verdict } from "./lib.js";
 
 const POLL = 90000;
 const STATE = "pr-inbox.state"; // { at, error, rows }
@@ -18,6 +18,8 @@ const FOCUS = "pr-inbox.focus"; // { key } the dialog opens on
 const OPEN = "pr-inbox.open"; // the dialog is open
 const SEARCH = "number,title,repository,updatedAt,isDraft,author,url";
 const VIEW = "number,title,url,headRefName,headRefOid,isCrossRepository,author,isDraft,reviewDecision,reviews,statusCheckRollup,additions,deletions,changedFiles,body";
+const CI = { ok: ["✓", "done"], run: ["◐", "working"], ko: ["✗", "blocked"] };
+const VERDICT_COLOR = { APPROVED: "done", CHANGES_REQUESTED: "blocked" };
 
 async function gh(args) {
   const r = await exec("gh", args);
@@ -26,12 +28,13 @@ async function gh(args) {
 }
 
 const empty = () => ({ at: null, error: null, rows: [] });
+const oneLine = (s, n) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 
 export default class PrInbox extends View {
   init(_props, cx) {
     this.floating = placement() !== null;
     this.details = {}; // key -> { at: updatedAt, view } from gh pr view, refetched when the PR moved
-    if (!this.floating) return;
+    if (!this.floating) return this.initDialog(cx);
     this.poll(cx);
     cx.timer.every(POLL, (cx) => this.poll(cx));
     cx.timer.every(60000, (cx) => cx.notify()); // the « il y a … » texts
@@ -123,8 +126,201 @@ export default class PrInbox extends View {
     return v_flex().id("pr-inbox").w(360).max_h(640).overflow_y_scrollbar().text_size(13).children(rows);
   }
 
-  dialog() {
+  // ---- the dialog copy ----
+
+  initDialog(cx) {
+    setShared(OPEN, true);
+    this.at = 0;
+    this.threads = {}; // key -> { at: updatedAt, threads, loading?, error? }
+    this.error = "";
+    this.handle = cx.focus_handle();
+    this.handle.focus();
+    cx.timer.after(600, () => this.handle.focus());
+    this.follow(cx);
+  }
+
+  // Herdr's cleanup call when the overlay goes (esc, a click beside it, our own button).
+  async close() {
+    setShared(OPEN, false);
+  }
+
+  dismiss() {
+    setShared(OPEN, false);
+    closeOverlay(props().overlay);
+  }
+
+  rows() {
+    return (shared(STATE) ?? empty()).rows;
+  }
+
+  selected() {
+    const rows = this.rows();
+    return rows[Math.min(this.at, rows.length - 1)];
+  }
+
+  // Moves to the row the drawer or a toast asked for, if any, and loads its comments.
+  follow(cx) {
+    const key = shared(FOCUS)?.key;
+    if (key) {
+      const i = this.rows().findIndex((r) => r.key === key);
+      if (i >= 0) this.at = i;
+      setShared(FOCUS, null);
+    }
+    this.loadThreads(cx);
+  }
+
+  // The reviews with their inline comments, for the selected row, once per update of the PR.
+  loadThreads(cx) {
+    const r = this.selected();
+    if (!r || this.threads[r.key]?.at === r.updatedAt) return;
+    this.threads[r.key] = { at: r.updatedAt, loading: true, threads: [] };
+    cx.spawn(async (cx) => {
+      try {
+        const [comments, view] = await Promise.all([gh(["api", "--paginate", `repos/${r.repo}/pulls/${r.number}/comments`]), gh(["pr", "view", String(r.number), "--repo", r.repo, "--json", "reviews"])]);
+        this.threads[r.key] = { at: r.updatedAt, threads: threads(view?.reviews ?? [], comments ?? []) };
+      } catch (e) {
+        this.threads[r.key] = { at: r.updatedAt, error: String(e.message ?? e), threads: [] };
+      }
+      cx.notify();
+    });
+  }
+
+  // GitHub forgets the notifications of this PR; the row leaves « Retour » for « En attente »
+  // right away (the next poll confirms).
+  async markRead(r) {
+    await Promise.all(r.notifs.map((id) => exec("gh", ["api", "-X", "PATCH", `notifications/threads/${id}`])));
+    const st = shared(STATE) ?? empty();
+    setShared(STATE, { ...st, rows: st.rows.map((x) => (x.key !== r.key ? x : { ...x, notifs: [], section: x.section === "back" ? "wait" : x.section })) });
+  }
+
+  openGitHub(r) {
+    exec(window().platform === "macos" ? "open" : "xdg-open", [r.url]);
+  }
+
+  key(e, cx) {
+    const n = this.rows().length;
+    if (e.key === "escape") return this.dismiss();
+    if (e.key === "enter") return cx.spawn(async (cx) => this.launch(cx));
+    if ((e.key === "down" || e.key === "up") && n) this.at = (Math.min(this.at, n - 1) + (e.key === "down" ? 1 : n - 1)) % n;
+    else return;
+    this.loadThreads(cx);
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // Task 6 fills this in.
+  async launch() {}
+
+  primaryLabel(r) {
+    return r.section === "review" ? "▶ Relire avec Claude" : r.section === "back" ? "▶ Traiter les remarques avec Claude" : null;
+  }
+
+  dialog(cx) {
     const t = theme();
-    return v_flex().id("pr-inbox-dialog").size_full().p(16).bg(t.popover).text_size(13).child(div().text_color(t.foreground).child("Pull requests"));
+    this.follow(cx);
+    const rows = this.rows();
+    const st = shared(STATE) ?? empty();
+    const sel = this.selected();
+    const now = Date.now();
+    const todo = rows.filter((r) => r.section !== "wait").length;
+    const repos = new Set(rows.map((r) => r.repo)).size;
+    const button = (id, label, primary, onClick, disabled = false) =>
+      h_flex().id(id).h(28).px(12).flex_none().items_center().rounded(6).text_size(12.5).cursor_pointer()
+        .when(primary && !disabled, (el) => el.bg(t.solid).text_color(t.solid_foreground).font_semibold())
+        .when(primary && disabled, (el) => el.bg(t.raised).text_color(t.dim).font_semibold())
+        .when(!primary, (el) => el.border(1).border_color(t.input).text_color(t.foreground).hover((s) => s.bg(t.hover)))
+        .on_click((_e, cx) => { cx.stop_propagation(); if (!disabled) onClick(cx); })
+        .child(label);
+    const chip = (text) => h_flex().h(20).px(8).rounded(5).bg(t.raised).items_center().text_size(11.5).text_color(t.muted).child(text);
+
+    const list = [];
+    for (const [sec, label, color] of SECTIONS) {
+      const of = rows.filter((r) => r.section === sec);
+      if (!of.length) continue;
+      list.push(h_flex().px(10).pt(list.length ? 10 : 4).pb(4).gap(8).items_center().child(div().text_size(10.5).font_semibold().text_color(sec === "review" ? t.blocked : t.dim).child(label.toUpperCase())).child(div().text_size(10.5).font_semibold().text_color(t[color]).child(String(of.length))));
+      for (const r of of) {
+        const i = rows.indexOf(r);
+        const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
+        list.push(
+          h_flex().id(`pid-${r.key}`).px(10).py(7).gap(10).items_start().rounded(7).cursor_pointer()
+            .when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((s) => s.bg(t.hover)))
+            .on_click((_e, cx) => { this.at = i; this.loadThreads(cx); cx.notify(); })
+            .child(div().size(8).mt(6).flex_none().rounded(4).bg(t[dotOf(r)]))
+            .child(v_flex().flex_1().min_w(0)
+              .child(div().truncate().text_size(12.5).text_color(t.foreground).child(`#${r.number} ${r.title}`))
+              .child(h_flex().gap(6).child(div().truncate().text_size(11).text_color(t.dim).child(sub(r, now))).when(Boolean(glyph), (el) => el.child(div().flex_none().text_size(11).text_color(t[ciColor]).child(`${glyph} CI`))))),
+        );
+      }
+    }
+
+    const detail = sel ? this.detail(sel, t, chip, now) : [div().text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…")];
+    const th = sel && this.threads[sel.key];
+    const primary = sel && this.primaryLabel(sel);
+    return v_flex()
+      .id("pr-inbox-dialog")
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
+      .size_full()
+      .bg(t.popover)
+      .text_size(13)
+      .child(h_flex().px(16).py(14).gap(12).items_center().border_b(1).border_color(t.border)
+        .child(div().text_size(15).font_semibold().text_color(t.foreground).child("Pull requests"))
+        .when(todo > 0, (el) => el.child(h_flex().h(20).px(8).rounded(10).bg(t.blocked + "26").items_center().text_size(11.5).font_semibold().text_color(t.blocked).child(`${todo} à traiter`)))
+        .child(div().text_size(12).text_color(t.dim).child(st.at ? `${repos} repo${repos > 1 ? "s" : ""} · mis à jour ${ago(now - st.at)}` : "chargement…"))
+        .child(div().flex_1())
+        .child(div().text_size(11).text_color(t.dim).child("esc")))
+      .child(h_flex().flex_1().min_h(0)
+        .child(v_flex().id("pid-list").w(380).flex_none().p(6).border_r(1).border_color(t.border).overflow_y_scrollbar().children(list.length ? list : [div().p(8).text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…")]))
+        .child(v_flex().flex_1().min_w(0)
+          .child(v_flex().id("pid-detail").flex_1().min_h(0).px(20).py(16).gap(14).overflow_y_scrollbar().children(detail))
+          .when(Boolean(sel), (el) => el.child(v_flex().px(20).py(12).gap(8).border_t(1).border_color(t.border)
+            .child(h_flex().gap(8).items_center()
+              .when(Boolean(primary), (x) => x.child(button("pid-go", primary, true, (cx) => cx.spawn(async (cx) => this.launch(cx)), th?.loading)))
+              .child(button("pid-gh", "Ouvrir sur GitHub ↗", false, () => this.openGitHub(sel)))
+              .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", false, (cx) => cx.spawn(async (cx) => { try { await this.markRead(sel); } catch (e) { this.error = String(e.message ?? e); } cx.notify(); }))))
+              .child(div().flex_1())
+              .child(div().text_size(11).text_color(t.dim).child("↑↓ choisir · ↵ lancer · esc")))
+            .when(Boolean(this.note), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.note)))
+            .when(Boolean(this.error), (x) => x.child(div().text_size(12).text_color(t.blocked).child(this.error)))))));
+  }
+
+  // The right column: the PR, then its reviews with their comments, read-only.
+  detail(r, t, chip, now) {
+    const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
+    const th = this.threads[r.key];
+    const mono = settings().font;
+    const out = [
+      div().text_size(15).font_semibold().text_color(t.foreground).child(`#${r.number} ${r.title}`),
+      h_flex().gap(12).flex_wrap().items_center().text_size(12).text_color(t.muted)
+        .child(div().child(r.name))
+        .child(div().text_color(t.foreground).child(r.mine ? "toi" : r.author))
+        .when(Boolean(r.branch), (el) => el.child(chip(`⎇ ${r.branch}`)))
+        .when(Boolean(glyph), (el) => el.child(div().text_color(t[ciColor]).child(`${glyph} CI`)))
+        .when(r.changedFiles !== null, (el) => el.child(h_flex().gap(4).child(div().child(`${r.changedFiles} fichiers`)).child(div().text_color(t.done).child(`+${r.additions}`)).child(div().text_color(t.blocked).child(`−${r.deletions}`))))
+        .when(r.draft, (el) => el.child(chip("brouillon"))),
+    ];
+    if (r.body) out.push(div().text_color(t.muted).child(oneLine(r.body, 300)));
+    const card = (x) => {
+      const color = t[VERDICT_COLOR[x.state] ?? "ansi5"];
+      const c = v_flex().px(12).py(10).gap(8).rounded(9).border(1).border_color(t.border)
+        .child(h_flex().gap(8).items_center()
+          .child(h_flex().size(20).rounded(10).bg(t.input).items_center().justify_center().text_size(10).font_bold().text_color(t.foreground).child(x.author[0]?.toUpperCase() ?? "?"))
+          .child(div().font_semibold().text_color(t.foreground).child(x.author))
+          .child(div().text_color(color).child(verdict(x.state)))
+          .child(div().flex_1())
+          .when(Boolean(x.submittedAt), (el) => el.child(div().text_size(11).text_color(t.dim).child(ago(now - Date.parse(x.submittedAt))))));
+      if (x.body) c.child(div().text_color(t.muted).child(x.body));
+      for (const k of x.comments) {
+        c.child(k.reply
+          ? div().pl(26).text_color(t.muted).child(`↳ ${k.author} : ${k.body}`)
+          : h_flex().gap(10).pl(4).items_start().child(div().w(3).flex_none().self_stretch().rounded(2).bg(t.input)).child(v_flex().flex_1().min_w(0).child(div().text_size(11.5).font_family(mono).text_color(t.ansi6).child(`${k.path}:${k.line}`)).child(div().text_color(t.foreground).child(k.body))));
+      }
+      return c;
+    };
+    if (th?.loading) out.push(div().text_color(t.dim).child("Chargement des commentaires…"));
+    else if (th?.error) out.push(div().text_color(t.blocked).child(th.error));
+    else if (th?.threads.length) out.push(...th.threads.map(card));
+    else out.push(div().text_color(t.dim).child(r.section === "review" ? "Personne n'a encore commenté." : `Personne n'a encore relu.${r.ci ? ` CI ${r.ci === "ok" ? "passée" : r.ci === "run" ? "en cours" : "en échec"}.` : ""}`));
+    return out;
   }
 }
