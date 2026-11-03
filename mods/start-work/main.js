@@ -6,7 +6,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, notify } from "herdr";
+import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, panes, notify } from "herdr";
 import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
@@ -348,8 +348,11 @@ export default class StartWork extends View {
       const r = await git(this.repo.main, add);
       if (!r.ok) throw new Error(r.err || "git worktree add a échoué.");
     }
-    const open = spaces().find((sp) => sp.folder === path);
-    if (open) return run("space.select", { id: open.id });
+    // A space's folder is where its new terminals start, not where they are:
+    // look for a terminal whose live folder is in the checkout.
+    const inside = panes().find((p) => p.cwd === path || p.cwd?.startsWith(`${path}/`));
+    const open = inside && spaces().find((sp) => sp.tabs.some((t) => t.id === inside.tab));
+    if (open) { run("space.select", { id: open.id }); return run("tab.select", { id: inside.tab }); }
     // Unnamed, so the space follows the checkout folder and nests under its repo.
     run("space.new", { folder: path, tab: "claude", argv: ["claude"] });
   }
