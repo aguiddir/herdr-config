@@ -12,6 +12,8 @@ export function slug(text) {
 export function branchFor(item, format = "{KEY}-{slug}") {
   if (item.kind === "jira") return format.replace("{KEY}", item.key).replace("{key}", item.key.toLowerCase()).replace("{slug}", slug(item.title));
   if (item.kind === "issue") return `${item.number}-${slug(item.title)}`;
+  // A fork's branch gets a name of its own: its "main" or "patch-1" is not ours.
+  if (item.kind === "pr") return item.fork ? `pr/${item.number}-${item.branch}` : item.branch;
   return slug(item.title);
 }
 
