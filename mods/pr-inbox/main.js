@@ -9,7 +9,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings, panes, spaces, appHome, home, readTextFile, writeTextFile, pickFolder } from "herdr";
-import { rowsOf, fresh, toastFor, sub, dotOf, ago, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf } from "./lib.js";
+import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf } from "./lib.js";
 import { localRepo, checkoutFor, checkoutsOf, spaceIn } from "./worktree.js";
 
 const POLL = 90000;
@@ -39,6 +39,7 @@ export default class PrInbox extends View {
     this.floating = !props()?.overlay;
     this.details = {}; // key -> { at: updatedAt, view } from gh pr view, refetched when the PR moved
     if (!this.floating) return this.initDialog(cx);
+    setShared(OPEN, false); // a dialog can't have survived a restart, whatever was persisted
     this.poll(cx);
     cx.timer.every(POLL, (cx) => this.poll(cx));
     cx.timer.every(60000, (cx) => cx.notify()); // the « il y a … » texts
@@ -62,7 +63,8 @@ export default class PrInbox extends View {
         // The detail of a PR is fetched again only when GitHub says it moved; one that fails keeps its last.
         await Promise.all(all.map(async (p) => {
           const key = keyOf(p);
-          if (this.details[key]?.at === p.updatedAt) return;
+          const have = this.details[key];
+          if (have?.at === p.updatedAt && ci(have.view?.statusCheckRollup) !== "run") return; // a check's end doesn't move updatedAt
           try { this.details[key] = { at: p.updatedAt, view: await gh(["pr", "view", String(p.number), "--repo", p.repository.nameWithOwner, "--json", VIEW]) }; } catch {}
         }));
         const live = new Set(all.map(keyOf));
@@ -74,7 +76,7 @@ export default class PrInbox extends View {
           const pr = prOf(n);
           const row = rows.find((r) => r.repo === pr.repo && r.number === pr.number);
           if (!row) continue; // a mention on a PR that is neither mine nor to review: nothing to show for it
-          setShared(FOCUS, { key: row.key });
+          if (!shared(OPEN)) setShared(FOCUS, { key: row.key }); // an open dialog keeps its row
           notify({ ...toastFor(n, row), level: "info", action: { name: "mod.open", args: { name: "pr-inbox" } } });
         }
         setShared(SEEN, seen);
@@ -134,7 +136,7 @@ export default class PrInbox extends View {
 
   initDialog(cx) {
     setShared(OPEN, true);
-    this.at = 0;
+    this.key = null; // the selected row, by key: the rows are rewritten by every poll
     this.threads = {}; // key -> { at: updatedAt, threads, loading?, error? }
     this.where = {}; // key -> { repo, path, open } : where ↵ would go, said before the click
     this.error = "";
@@ -161,15 +163,14 @@ export default class PrInbox extends View {
 
   selected() {
     const rows = this.rows();
-    return rows[Math.min(this.at, rows.length - 1)];
+    return rows.find((r) => r.key === this.key) ?? rows[0];
   }
 
   // Moves to the row the drawer or a toast asked for, if any, and loads its comments.
   follow(cx) {
     const key = shared(FOCUS)?.key;
     if (key) {
-      const i = this.rows().findIndex((r) => r.key === key);
-      if (i >= 0) this.at = i;
+      if (this.rows().some((r) => r.key === key)) this.key = key;
       setShared(FOCUS, null);
     }
     this.loadThreads(cx);
@@ -207,10 +208,11 @@ export default class PrInbox extends View {
   }
 
   key(e, cx) {
-    const n = this.rows().length;
+    const rows = this.rows();
+    const n = rows.length;
     if (e.key === "escape") return this.dismiss();
     if (e.key === "enter") return cx.spawn(async (cx) => this.launch(cx));
-    if ((e.key === "down" || e.key === "up") && n) this.at = (Math.min(this.at, n - 1) + (e.key === "down" ? 1 : n - 1)) % n;
+    if ((e.key === "down" || e.key === "up") && n) this.key = rows[(rows.indexOf(this.selected()) + (e.key === "down" ? 1 : n - 1)) % n].key;
     else return;
     this.loadThreads(cx);
     cx.stop_propagation();
@@ -287,6 +289,8 @@ export default class PrInbox extends View {
     cx.notify();
     try {
       if (!r.branch) throw new Error("Branche inconnue : GitHub n'a pas encore répondu pour cette PR.");
+      const th = this.threads[r.key];
+      if (r.section === "back" && (!th || th.loading || th.error)) throw new Error(th?.error ?? "Les remarques ne sont pas encore chargées : réessaie dans un instant.");
       const repo = await this.repoFor(r);
       const path = await checkoutFor(repo, r);
       const open = spaceIn(path, (await checkoutsOf(repo.main)).values(), panes(), spaces());
@@ -329,12 +333,12 @@ export default class PrInbox extends View {
       if (!of.length) continue;
       list.push(h_flex().px(10).pt(list.length ? 10 : 4).pb(4).gap(8).items_center().child(div().text_size(10.5).font_semibold().text_color(sec === "review" ? t.blocked : t.dim).child(label.toUpperCase())).child(div().text_size(10.5).font_semibold().text_color(t[color]).child(String(of.length))));
       for (const r of of) {
-        const i = rows.indexOf(r);
+        const on = r.key === sel?.key;
         const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
         list.push(
           h_flex().id(`pid-${r.key}`).px(10).py(7).gap(10).items_start().rounded(7).cursor_pointer()
-            .when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((s) => s.bg(t.hover)))
-            .on_click((_e, cx) => { this.at = i; this.loadThreads(cx); cx.notify(); })
+            .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+            .on_click((_e, cx) => { this.key = r.key; this.loadThreads(cx); cx.notify(); })
             .child(div().size(8).mt(6).flex_none().rounded(4).bg(t[dotOf(r)]))
             .child(v_flex().flex_1().min_w(0)
               .child(div().truncate().text_size(12.5).text_color(t.foreground).child(`#${r.number} ${r.title}`))
@@ -378,7 +382,7 @@ export default class PrInbox extends View {
   detail(r, t, chip, now) {
     const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
     const th = this.threads[r.key];
-    const mono = settings().font; // the terminal's font, when the layout names one
+    const mono = settings().font_family ?? "JetBrains Mono"; // as the changes mod does
     const out = [
       div().text_size(15).font_semibold().text_color(t.foreground).child(`#${r.number} ${r.title}`),
       h_flex().gap(12).flex_wrap().items_center().text_size(12).text_color(t.muted)
@@ -403,7 +407,7 @@ export default class PrInbox extends View {
       for (const k of x.comments) {
         c.child(k.reply
           ? div().pl(26).text_color(t.muted).child(`↳ ${k.author} : ${k.body}`)
-          : h_flex().gap(10).pl(4).items_start().child(div().w(3).flex_none().self_stretch().rounded(2).bg(t.input)).child(v_flex().flex_1().min_w(0).child(div().text_size(11.5).when(Boolean(mono), (el) => el.font_family(mono)).text_color(t.ansi6).child(`${k.path}:${k.line}`)).child(div().text_color(t.foreground).child(k.body))));
+          : h_flex().gap(10).pl(4).items_start().child(div().w(3).flex_none().self_stretch().rounded(2).bg(t.input)).child(v_flex().flex_1().min_w(0).child(div().text_size(11.5).font_family(mono).text_color(t.ansi6).child(k.line != null ? `${k.path}:${k.line}` : k.path)).child(div().text_color(t.foreground).child(k.body))));
       }
       return c;
     };
