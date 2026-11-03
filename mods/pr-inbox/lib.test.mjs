@@ -66,16 +66,19 @@ assert.equal(sub({ ...rows[2], decision: "APPROVED", reviews: [{ author: "mlefev
 
 // Inline comments attach to their review by id, replies right under their parent;
 // comments of an unknown review make a trailing thread per author.
-const reviews = [{ id: "R1", author: { login: "brondon-ung" }, state: "COMMENTED", body: "Relu", submittedAt: "2026-11-03T09:01:58Z" }, { id: "R2", author: { login: "yoannwicker" }, state: "CHANGES_REQUESTED", body: "", submittedAt: "2026-11-03T11:54:54Z" }];
+// Reviews and comments as the REST API gives them (gh api …/pulls/N/reviews and /comments): the
+// comments name their review by its database id, which `gh pr view --json reviews` doesn't carry.
+const reviews = [{ id: 5700405921, user: { login: "brondon-ung" }, state: "COMMENTED", body: "Relu", submitted_at: "2026-11-03T09:01:58Z" }, { id: 5700435778, user: { login: "yoannwicker" }, state: "CHANGES_REQUESTED", body: "", submitted_at: "2026-11-03T11:54:54Z" }];
 const comments = [
-  { id: 10, pull_request_review_id: "R2", path: "a/B.java", line: 42, original_line: 40, body: "Pourquoi un Optional ?", user: { login: "yoannwicker" }, in_reply_to_id: null },
-  { id: 11, pull_request_review_id: "R2", path: "a/B.java", line: null, original_line: 42, body: "Parce que.", user: { login: "aguiddir" }, in_reply_to_id: 10 },
-  { id: 12, pull_request_review_id: "R1", path: "t/It.java", line: 84, original_line: 84, body: "Un second test", user: { login: "brondon-ung" }, in_reply_to_id: null },
-  { id: 13, pull_request_review_id: "R9", path: "c.ts", line: 1, original_line: 1, body: "orphelin", user: { login: "mlefevre" }, in_reply_to_id: null },
+  { id: 10, pull_request_review_id: 5700435778, path: "a/B.java", line: 42, original_line: 40, body: "Pourquoi un Optional ?", user: { login: "yoannwicker" }, in_reply_to_id: null },
+  { id: 11, pull_request_review_id: 5700435778, path: "a/B.java", line: null, original_line: 42, body: "Parce que.", user: { login: "aguiddir" }, in_reply_to_id: 10 },
+  { id: 12, pull_request_review_id: 5700405921, path: "t/It.java", line: 84, original_line: 84, body: "Un second test", user: { login: "brondon-ung" }, in_reply_to_id: null },
+  { id: 13, pull_request_review_id: 1, path: "c.ts", line: 1, original_line: 1, body: "orphelin", user: { login: "mlefevre" }, in_reply_to_id: null },
 ];
 const th = threads(reviews, comments);
 assert.deepEqual(th.map((t) => [t.author, t.comments.map((c) => [c.line, c.reply])]), [["brondon-ung", [[84, false]]], ["yoannwicker", [[42, false], [42, true]]], ["mlefevre", [[1, false]]]]);
 assert.equal(th[2].state, "COMMENTED");
+assert.equal(th[0].submittedAt, "2026-11-03T09:01:58Z");
 
 const row = { number: 187, repo: "softwarevidal/renoshield", title: "POSO-103: Checks", branch: "feat/poso-103" };
 const rp = reviewPrompt(row);

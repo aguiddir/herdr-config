@@ -106,11 +106,11 @@ export function dotOf(row) {
 const VERDICT = { APPROVED: "a approuvé", CHANGES_REQUESTED: "demande des changements" };
 export const verdict = (state) => VERDICT[state] ?? "a commenté";
 
-// Each review (raw, from `gh pr view --json reviews`: id, author.login) with its inline
-// comments (`gh api …/pulls/N/comments`), a reply right after its parent. Comments whose
-// review isn't listed make one trailing thread per author.
+// Each review (REST: `gh api …/pulls/N/reviews`, whose numeric id the comments name) with its
+// inline comments (`gh api …/pulls/N/comments`), a reply right after its parent. Comments
+// whose review isn't listed make one trailing thread per author.
 export function threads(reviews, comments) {
-  const out = reviews.map((r) => ({ id: r.id, author: r.author?.login ?? "?", state: r.state, body: r.body ?? "", submittedAt: r.submittedAt, comments: [] }));
+  const out = reviews.map((r) => ({ id: r.id, author: r.user?.login ?? "?", state: r.state, body: r.body ?? "", submittedAt: r.submitted_at, comments: [] }));
   const by = new Map(out.map((t) => [t.id, t]));
   const orphan = (c) => {
     let t = out.find((x) => x.id === undefined && x.author === c.user?.login);
