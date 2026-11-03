@@ -74,6 +74,11 @@ export default class StartWork extends View {
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
+    // The focused Input binds tab itself, and bindings run before on_key_down:
+    // a binding of ours, at the Input's depth, comes first.
+    for (const context of ["StartWork", "StartWork > Input"]) {
+      try { cx.bind_keys([{ keystroke: "tab", action: "sw_switch_tab", context }]); } catch {}
+    }
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
     cx.spawn(async (cx) => this.load(cx));
   }
@@ -347,7 +352,6 @@ export default class StartWork extends View {
 
   key(e, cx) {
     if (e.key === "escape") return this.close();
-    if (e.key === "tab") { this.switchTo(this.src === "jira" ? "issue" : "jira"); cx.stop_propagation(); return cx.notify(); }
     const n = this.rows().length;
     if ((e.key === "down" || e.key === "up") && n) this.at = (Math.min(this.at, n - 1) + (e.key === "down" ? 1 : n - 1)) % n;
     else return;
@@ -416,6 +420,8 @@ export default class StartWork extends View {
     return v_flex()
       .id("start-work")
       .track_focus(this.handle)
+      .key_context("StartWork")
+      .on_action("sw_switch_tab", (_e, cx) => { this.switchTo(this.src === "jira" ? "issue" : "jira"); cx.notify(); })
       .on_key_down((e, cx) => this.key(e, cx))
       .size_full()
       .p(16)
