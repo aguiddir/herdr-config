@@ -79,13 +79,13 @@ export async function checkoutFor(repo, row) {
   const has = async (ref) => (await git(main, ["show-ref", "--verify", "--quiet", ref])).ok;
   const local = await has(`refs/heads/${branch}`);
   if (local) await catchUp(main, row, branch, head);
-  const exists = local || (await has(`refs/remotes/origin/${branch}`));
   path = `${home()}/.herdr/worktrees/${repo.name}/${branch.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
-  // An existing branch is checked out as is (one only on origin gets a local branch tracking it);
-  // a new one (a fork's) starts from the PR's head.
-  const add = exists ? ["worktree", "add", path, branch] : ["worktree", "add", "--no-track", "-b", branch, path, head];
+  // A local branch is checked out as is. A new one starts from the PR's head, not from
+  // origin/<branch>, which may be behind (only pull/N/head was fetched); it then tracks origin's.
+  const add = local ? ["worktree", "add", path, branch] : ["worktree", "add", "--no-track", "-b", branch, path, head];
   const r = await git(main, add);
   if (!r.ok) throw new Error(r.err || "git worktree add a échoué.");
+  if (!local && (await has(`refs/remotes/origin/${branch}`))) await git(main, ["branch", `--set-upstream-to=origin/${branch}`, branch]);
   return path;
 }
 
