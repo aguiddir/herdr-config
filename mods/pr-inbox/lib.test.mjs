@@ -1,6 +1,6 @@
 // node mods/pr-inbox/lib.test.mjs
 import assert from "node:assert/strict";
-import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf, threads, reviewPrompt, fixPrompt, branchOf, matchOrigin } from "./lib.js";
+import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf, threads, reviewPrompt, fixPrompt, branchOf, matchOrigin, step } from "./lib.js";
 
 assert.equal(bare("♻️ POSO-112: Build"), "POSO-112: Build");
 assert.deepEqual(prOf({ subject: { type: "PullRequest", url: "https://api.github.com/repos/o/r/pulls/203" }, repository: { full_name: "o/r" } }), { repo: "o/r", number: 203 });
@@ -124,4 +124,12 @@ assert.equal(branchOf({ number: 7, branch: "feat/x", fork: false }), "feat/x");
 for (const u of ["git@github.com:SoftwareVidal/renoshield.git", "https://github.com/softwarevidal/renoshield", "https://github.com/softwarevidal/renoshield.git", "ssh://git@github.com/softwarevidal/renoshield.git"]) assert.equal(matchOrigin(u, "softwarevidal/renoshield"), true, u);
 assert.equal(matchOrigin("git@github.com:softwarevidal/renoshield-pr89.git", "softwarevidal/renoshield"), false);
 assert.equal(matchOrigin("", "softwarevidal/renoshield"), false);
+// Arrows: by key, never by identity (shared() hands out a fresh object on every read).
+const abc = [{ key: "a" }, { key: "b" }, { key: "c" }];
+assert.equal(step(abc, "a", 1), "b");
+assert.equal(step(abc, null, 1), "b"); // nothing chosen yet: the first row is
+assert.equal(step(abc, "gone", 1), "b"); // a row that left the list: the first row again
+assert.equal(step(abc, "c", 1), "a");
+assert.equal(step(abc, "a", -1), "c");
+assert.equal(step([], null, 1), null);
 console.log("ok");
