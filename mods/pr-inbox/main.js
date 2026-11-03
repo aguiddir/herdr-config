@@ -35,7 +35,8 @@ const oneLine = (s, n) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(
 
 export default class PrInbox extends View {
   init(_props, cx) {
-    this.floating = placement() !== null;
+    // placement() is null while a floating copy is being placed: the overlay id tells the copies apart.
+    this.floating = !props()?.overlay;
     this.details = {}; // key -> { at: updatedAt, view } from gh pr view, refetched when the PR moved
     if (!this.floating) return this.initDialog(cx);
     this.poll(cx);
@@ -182,8 +183,10 @@ export default class PrInbox extends View {
     this.threads[r.key] = { at: r.updatedAt, loading: true, threads: [] };
     cx.spawn(async (cx) => {
       try {
-        const [comments, view] = await Promise.all([gh(["api", "--paginate", `repos/${r.repo}/pulls/${r.number}/comments`]), gh(["pr", "view", String(r.number), "--repo", r.repo, "--json", "reviews"])]);
-        this.threads[r.key] = { at: r.updatedAt, threads: threads(view?.reviews ?? [], comments ?? []) };
+        // REST for both: the comments name their review by its database id, which GraphQL's `gh pr view` doesn't give.
+        const pages = async (what) => (await gh(["api", "--paginate", "--slurp", `repos/${r.repo}/pulls/${r.number}/${what}`]) ?? []).flat();
+        const [reviews, comments] = await Promise.all([pages("reviews"), pages("comments")]);
+        this.threads[r.key] = { at: r.updatedAt, threads: threads(reviews, comments) };
       } catch (e) {
         this.threads[r.key] = { at: r.updatedAt, error: String(e.message ?? e), threads: [] };
       }
@@ -356,7 +359,7 @@ export default class PrInbox extends View {
         .child(div().text_size(12).text_color(t.dim).child(st.at ? `${repos} repo${repos > 1 ? "s" : ""} · mis à jour ${ago(now - st.at)}` : "chargement…"))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(t.dim).child("esc")))
-      .child(h_flex().flex_1().min_h(0)
+      .child(h_flex().flex_1().min_h(0).items_stretch() // h_flex centers its items: the columns must fill the height
         .child(v_flex().id("pid-list").w(380).flex_none().p(6).border_r(1).border_color(t.border).overflow_y_scrollbar().children(list.length ? list : [div().p(8).text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…")]))
         .child(v_flex().flex_1().min_w(0)
           .child(v_flex().id("pid-detail").flex_1().min_h(0).px(20).py(16).gap(14).overflow_y_scrollbar().children(detail))
@@ -375,7 +378,7 @@ export default class PrInbox extends View {
   detail(r, t, chip, now) {
     const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
     const th = this.threads[r.key];
-    const mono = settings().font;
+    const mono = settings().font; // the terminal's font, when the layout names one
     const out = [
       div().text_size(15).font_semibold().text_color(t.foreground).child(`#${r.number} ${r.title}`),
       h_flex().gap(12).flex_wrap().items_center().text_size(12).text_color(t.muted)
@@ -400,7 +403,7 @@ export default class PrInbox extends View {
       for (const k of x.comments) {
         c.child(k.reply
           ? div().pl(26).text_color(t.muted).child(`↳ ${k.author} : ${k.body}`)
-          : h_flex().gap(10).pl(4).items_start().child(div().w(3).flex_none().self_stretch().rounded(2).bg(t.input)).child(v_flex().flex_1().min_w(0).child(div().text_size(11.5).font_family(mono).text_color(t.ansi6).child(`${k.path}:${k.line}`)).child(div().text_color(t.foreground).child(k.body))));
+          : h_flex().gap(10).pl(4).items_start().child(div().w(3).flex_none().self_stretch().rounded(2).bg(t.input)).child(v_flex().flex_1().min_w(0).child(div().text_size(11.5).when(Boolean(mono), (el) => el.font_family(mono)).text_color(t.ansi6).child(`${k.path}:${k.line}`)).child(div().text_color(t.foreground).child(k.body))));
       }
       return c;
     };
