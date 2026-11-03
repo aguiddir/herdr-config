@@ -7,7 +7,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, panes, notify } from "herdr";
-import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel } from "./lib.js";
+import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -70,6 +70,7 @@ export default class StartWork extends View {
     this.prs = []; // open ones, as gh gives them
     this.pulls = []; // the same, as rows of the PR tab
     this.found = {}; // tickets fetched by their exact key, outside the sprint
+    this.checkouts = new Map(); // branch -> folder where it is checked out
     this.ready = false; // branches and PRs loaded: before, Créer can't tell new work from work under way
     this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10782 · labels = DATADELTA" });
     this.sourceInput.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
@@ -117,6 +118,7 @@ export default class StartWork extends View {
   // What already exists, so a ticket with work under way is resumed, not started over.
   async loadWork() {
     await git(this.repo.main, ["fetch", "--quiet", "origin"]);
+    this.checkouts = await this.checkoutsOf();
     const refs = await git(this.repo.main, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"]);
     this.branches = [...new Set(refs.out.split("\n").filter((b) => b && b !== "origin" && b !== "origin/HEAD").map((b) => b.replace(/^origin\//, "")))];
     const r = await exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,title,url,author,isDraft,isCrossRepository"], { cwd: this.repo.main });
@@ -348,11 +350,8 @@ export default class StartWork extends View {
       const r = await git(this.repo.main, add);
       if (!r.ok) throw new Error(r.err || "git worktree add a échoué.");
     }
-    // A space's folder is where its new terminals start, not where they are:
-    // look for a terminal whose live folder is in the checkout.
-    const inside = panes().find((p) => p.cwd === path || p.cwd?.startsWith(`${path}/`));
-    const open = inside && spaces().find((sp) => sp.tabs.some((t) => t.id === inside.tab));
-    if (open) { run("space.select", { id: open.id }); return run("tab.select", { id: inside.tab }); }
+    const open = spaceIn(path, (await this.checkoutsOf()).values(), panes(), spaces());
+    if (open) { run("space.select", { id: open.space.id }); return open.tab && run("tab.select", { id: open.tab }); }
     // Unnamed, so the space follows the checkout folder and nests under its repo.
     run("space.new", { folder: path, tab: "claude", argv: ["claude"] });
   }
@@ -376,9 +375,17 @@ export default class StartWork extends View {
 
   // The folder where the branch is already checked out, if any.
   async checkoutOf(branch) {
+    return (await this.checkoutsOf()).get(branch) ?? null;
+  }
+
+  // Every checked-out branch and its folder.
+  async checkoutsOf() {
     const list = (await git(this.repo.main, ["worktree", "list", "--porcelain"])).out;
-    const tree = list.split("\n\n").map((b) => b.split("\n")).find((lines) => lines.includes(`branch refs/heads/${branch}`));
-    return tree?.[0].replace(/^worktree /, "") ?? null;
+    const trees = list.split("\n\n").map((b) => b.split("\n"));
+    return new Map(trees.flatMap((lines) => {
+      const branch = lines.find((l) => l.startsWith("branch refs/heads/"));
+      return branch ? [[branch.slice("branch refs/heads/".length), lines[0].replace(/^worktree /, "")]] : [];
+    }));
   }
 
   // Assign the ticket to me and, if it is still to do, move it to jira_start_status
@@ -460,7 +467,13 @@ export default class StartWork extends View {
     const takes = sel?.kind === "jira" && !sel.mine;
     const typed = this.branch.value().trim();
     const old = this.branches.includes(typed); // Créer then resumes that branch
-    const pr = old && this.prs.find((p) => p.headRefName === typed);
+    const pr = old && this.pulls.find((p) => branchFor(p) === typed); // a fork's is pr/<n>-<branch>, not its head's name
+    // Where Reprendre goes, said before it goes: it may be the space this was opened from.
+    const at = old && this.checkouts.get(typed);
+    const there = at && spaceIn(at, this.checkouts.values(), panes(), spaces());
+    const itsTab = there?.tab && there.space.tabs.find((x) => x.id === there.tab);
+    const resume = !at ? "le travail sera repris, pas recommencé."
+      : `déjà sortie dans ${at.replace(home(), "~")} · ${!there ? "Reprendre y ouvre un espace." : !there.space.active ? `Reprendre affiche l'espace « ${there.space.name} ».` : itsTab && !itsTab.active ? `Reprendre affiche l'onglet « ${itsTab.name} » de cet espace.` : "c'est là où tu es."}`;
     const field = (state) => Input.new(state).h(32).px(10).items_center().rounded(6).border(1).border_color(t.input).bg(t.background).text_color(t.foreground);
     return v_flex()
       .id("start-work")
@@ -501,7 +514,7 @@ export default class StartWork extends View {
           .when(rows.length === 0 && !this.notes[this.src].length && (this.src !== "jira" || this.named.length > 0), (l) => l.child(div().p(8).text_color(t.dim).child(this.text ? "Rien ne correspond." : "Chargement…")))
           .children(this.notes[this.src].map((n) => div().px(8).text_size(11).text_color(t.dim).child(n)))
           .child(h_flex().gap(8).items_center().child(div().w(64).text_size(12).text_color(t.muted).child("Branche")).child(field(this.branch).flex_1()))
-          .when(old, (l) => l.child(div().pl(72).text_size(11).text_color(t.ansi3).child(`Branche existante${pr ? ` · PR #${pr.number} ouverte` : ""} : le travail sera repris, pas recommencé.`)))
+          .when(old, (l) => l.child(div().pl(72).text_size(11).text_color(t.ansi3).child(`Branche existante${pr ? ` · PR #${pr.number} ouverte` : ""} : ${resume}`)))
           .when(takes, (l) => l.child(this.toggle(t, "sw-take", this.assign, `M'assigner ${sel.key}${sel.todo ? " et le passer en cours" : ""}`, () => (this.assign = !this.assign)))),
       )
       .when(Boolean(this.error), (el) => el.child(div().text_color(t.blocked).child(this.error)))
