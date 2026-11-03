@@ -108,3 +108,38 @@ export function dotOf(row) {
   if (row.section === "back") return row.decision === "CHANGES_REQUESTED" ? "blocked" : "ansi5";
   return row.decision === "APPROVED" ? "done" : "working";
 }
+
+const VERDICT = { APPROVED: "a approuvé", CHANGES_REQUESTED: "demande des changements" };
+export const verdict = (state) => VERDICT[state] ?? "a commenté";
+
+// Each review (REST: `gh api …/pulls/N/reviews`, whose numeric id the comments name) with its
+// inline comments (`gh api …/pulls/N/comments`), a reply right after its parent. Comments
+// whose review isn't listed make one trailing thread per author.
+export function threads(reviews, comments) {
+  const out = reviews.map((r) => ({ id: r.id, author: r.user?.login ?? "?", state: r.state, body: r.body ?? "", submittedAt: r.submitted_at, comments: [] }));
+  const by = new Map(out.map((t) => [t.id, t]));
+  const orphan = (c) => {
+    let t = out.find((x) => x.id === undefined && x.author === c.user?.login);
+    if (!t) out.push((t = { author: c.user?.login ?? "?", state: "COMMENTED", body: "", submittedAt: c.created_at, comments: [] }));
+    return t;
+  };
+  const entry = (c, reply) => ({ path: c.path, line: c.line ?? c.original_line, body: c.body, author: c.user?.login ?? "?", reply });
+  const roots = comments.filter((c) => !c.in_reply_to_id);
+  for (const c of roots) {
+    const t = by.get(c.pull_request_review_id) ?? orphan(c);
+    t.comments.push(entry(c, false), ...comments.filter((r) => r.in_reply_to_id === c.id).map((r) => entry(r, true)));
+  }
+  return out;
+}
+
+export function reviewPrompt(row) {
+  return `Relis la PR #${row.number} de ${row.repo} (« ${row.title} », branche ${row.branch}) avec le skill code-review. Prépare la review dans ce terminal : les points bloquants d'abord, chacun avec fichier:ligne, pourquoi c'est faux et comment le montrer. Ne poste rien sur GitHub : c'est moi qui poste.`;
+}
+
+export function fixPrompt(row, threads) {
+  const lines = threads.flatMap((t) => [
+    `- ${t.author} (${verdict(t.state)})${t.body ? ` : ${t.body}` : ""}`,
+    ...t.comments.map((c) => (c.reply ? `    ↳ ${c.author} : ${c.body}` : `  - ${c.path}:${c.line} — ${c.body}`)),
+  ]);
+  return `Des reviews sont tombées sur ma PR #${row.number} de ${row.repo} (« ${row.title} », branche ${row.branch}). Les voici :\n${lines.join("\n")}\nApplique le skill superpowers:receiving-code-review : vérifie chaque remarque avant de la suivre, corrige en commits \`git commit --fixup=<sha>\` sur le commit concerné. Ne réponds pas sur GitHub : je réponds moi-même, dis-moi ce que tu as fait et ce que tu contestes.`;
+}
