@@ -8,8 +8,9 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings } from "herdr";
-import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, step } from "./lib.js";
+import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings, panes, spaces, appHome, home, readTextFile, writeTextFile, pickFolder } from "herdr";
+import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf, argvFor, step } from "./lib.js";
+import { localRepo, checkoutFor, checkoutsOf, spaceIn, safe } from "./worktree.js";
 
 const POLL = 90000;
 const STATE = "pr-inbox.state"; // { at, error, rows }
@@ -19,6 +20,7 @@ const OPEN = "pr-inbox.open"; // the dialog is open
 const SEARCH = "number,title,repository,updatedAt,isDraft,author,url";
 const VIEW = "number,title,url,headRefName,headRefOid,isCrossRepository,author,isDraft,reviewDecision,reviews,statusCheckRollup,additions,deletions,changedFiles,body";
 const CI = { ok: ["✓", "done"], run: ["◐", "working"], ko: ["✗", "blocked"] };
+const CONFIG = () => `${appHome()}/mods/pr-inbox/config.json`; // { "repos": { "owner/name": "/folder" } }
 const VERDICT_COLOR = { APPROVED: "done", CHANGES_REQUESTED: "blocked" };
 
 async function gh(args) {
@@ -141,7 +143,10 @@ export default class PrInbox extends View {
     setShared(OPEN, true);
     this.sel = null; // the selected row's key (not `key`: that is the key handler): the rows are rewritten by every poll
     this.threads = {}; // key -> { at: updatedAt, threads, loading?, error? }
+    this.where = {}; // key -> { at: updatedAt, repo, path, open } : where ↵ would go, said before the click
+    this.repos = {}; // owner/name -> the local repo (or null): found once per dialog, not per row
     this.error = "";
+    this.busy = false;
     this.handle = cx.focus_handle();
     this.handle.focus();
     cx.timer.after(600, () => this.handle.focus());
@@ -182,6 +187,7 @@ export default class PrInbox extends View {
   // The reviews with their inline comments, for the selected row, once per update of the PR.
   loadThreads(cx) {
     const r = this.selected();
+    this.locate(cx);
     if (!r || this.threads[r.key]?.at === r.updatedAt) return;
     this.threads[r.key] = { at: r.updatedAt, loading: true, threads: [] };
     cx.spawn(async (cx) => {
@@ -230,11 +236,95 @@ export default class PrInbox extends View {
     cx.notify();
   }
 
-  // Task 6 fills this in.
-  async launch() {}
-
   primaryLabel(r) {
     return r.section === "review" ? "▶ Relire avec Claude" : r.section === "back" ? "▶ Traiter les remarques avec Claude" : null;
+  }
+
+  // Folders that may be a checkout of the PR's repo: the spaces' and terminals' folders,
+  // the repo's worktrees, and what config.json was told.
+  async candidates(r) {
+    const config = JSON.parse((await readTextFile(CONFIG())) ?? "{}");
+    const trees = await exec("find", [`${home()}/.herdr/worktrees/${r.name}`, "-mindepth", "1", "-maxdepth", "1", "-type", "d"]).catch(() => null);
+    return [...spaces().filter((s) => !s.machine).map((s) => s.folder), ...panes().map((p) => p.cwd), ...(trees?.stdout ?? "").split("\n"), config.repos?.[r.repo]].filter(Boolean);
+  }
+
+  // Finds the repo, the checkout and the space of the selected PR, for the note under the buttons.
+  // Once per update of the PR, and not before its branch is known (gh pr view may still be out).
+  locate(cx) {
+    const r = this.selected();
+    if (!r || !this.primaryLabel(r) || !r.branch || this.where[r.key]?.at === r.updatedAt) return;
+    this.where[r.key] = { at: r.updatedAt, loading: true };
+    cx.spawn(async (cx) => {
+      try {
+        if (!(r.repo in this.repos)) this.repos[r.repo] = await localRepo(r.repo, await this.candidates(r));
+        const repo = this.repos[r.repo];
+        const checkouts = repo ? await checkoutsOf(repo.main) : new Map();
+        const path = (repo && checkouts.get(branchOf(r))) ?? null;
+        const open = path ? spaceIn(path, checkouts.values(), panes(), spaces()) : null;
+        this.where[r.key] = { at: r.updatedAt, repo, path, open };
+      } catch (e) {
+        this.where[r.key] = { at: r.updatedAt, error: String(e.message ?? e) };
+      }
+      cx.notify();
+    });
+  }
+
+  noteFor(r) {
+    const w = this.where[r.key];
+    if (!w || w.loading) return "";
+    if (w.error) return w.error;
+    const then = r.section === "review" ? `lance claude en review de la PR #${r.number}` : `lance claude avec les ${r.remarks} remarques`;
+    if (!w.repo) return `↵ demande où est le dépôt ${r.repo} sur cette machine, puis ${then}.`;
+    const b = branchOf(r); // known: locate waits for the branch
+    if (w.open) return `↵ ouvre l'espace « ${w.open.space.name} » (déjà ouvert sur ${b}), puis ${then}.`;
+    if (w.path) return `↵ ouvre un espace sur ${w.path.replace(home(), "~")} (déjà sortie), puis ${then}.`;
+    return `↵ crée le worktree ~/.herdr/worktrees/${w.repo.name}/${safe(b)} et un espace dessus, puis ${then}.`;
+  }
+
+  // The repo's main checkout on this machine; asked for, and kept in config.json, when none is found.
+  async repoFor(r) {
+    const repo = await localRepo(r.repo, await this.candidates(r));
+    if (repo) return repo;
+    const folder = await pickFolder({ prompt: "Ce dossier" });
+    if (!folder) throw new Error(`Dépôt introuvable : indique son dossier (${r.repo}).`);
+    const found = await localRepo(r.repo, [folder]);
+    if (!found) throw new Error(`${folder.replace(home(), "~")} n'est pas un clone de ${r.repo}.`);
+    const before = await readTextFile(CONFIG());
+    const config = JSON.parse(before ?? "{}");
+    config.repos = { ...config.repos, [r.repo]: folder };
+    await writeTextFile(CONFIG(), JSON.stringify(config, null, 2) + "\n", before);
+    return found;
+  }
+
+  // ↵: the PR's branch checked out (made if needed), a space on it (found if open), Claude
+  // started there with the prompt as its first message. The notifications are read: the person
+  // is on it. A review, Claude posts (the PR then leaves the drawer); feedback, the person answers.
+  async launch(cx) {
+    const r = this.selected();
+    if (!r || this.busy || !this.primaryLabel(r)) return;
+    this.busy = true;
+    this.error = "";
+    cx.notify();
+    try {
+      if (!r.branch) throw new Error("Branche inconnue : GitHub n'a pas encore répondu pour cette PR.");
+      const th = this.threads[r.key];
+      if (r.section === "back" && (!th || th.loading || th.error)) throw new Error(th?.error ?? "Les remarques ne sont pas encore chargées : réessaie dans un instant.");
+      const repo = await this.repoFor(r);
+      const path = await checkoutFor(repo, r);
+      const open = spaceIn(path, (await checkoutsOf(repo.main)).values(), panes(), spaces());
+      const task = r.section === "review" ? reviewPrompt(r) : fixPrompt(r, this.threads[r.key]?.threads ?? []);
+      if (open) {
+        run("space.select", { id: open.space.id });
+        run("tab.new", { space: open.space.id, name: "claude", folder: path, argv: argvFor(r), task });
+      } else run("space.new", { folder: path, tab: "claude", argv: argvFor(r), task }); // unnamed: the space follows the folder and nests under its repo
+      if (r.notifs.length) await this.markRead(r);
+      notify({ title: `Claude lancé sur ${repo.name} · ${branchOf(r)}`, body: r.section === "review" ? `Review de la PR #${r.number}${open ? "" : " dans un nouvel espace"}.` : `Il traite les ${r.remarks} remarques de la PR #${r.number}.`, level: "success" });
+      this.dismiss();
+    } catch (e) {
+      this.error = String(e.message ?? e);
+    }
+    this.busy = false;
+    cx.notify();
   }
 
   dialog(cx) {
@@ -307,13 +397,13 @@ export default class PrInbox extends View {
         .child(v_flex().flex_1().min_w(0)
           .child(v_flex().id("pid-detail").flex_1().min_h(0).px(20).py(16).gap(14).overflow_y_scrollbar().children(detail))
           .when(Boolean(sel), (el) => el.child(v_flex().px(20).py(12).gap(8).border_t(1).border_color(t.border)
-            .child(h_flex().gap(8).items_center()
-              .when(Boolean(primary), (x) => x.child(button("pid-go", primary, "↵", true, (cx) => cx.spawn(async (cx) => this.launch(cx)), th?.loading)))
+            .child(h_flex().gap(8).items_center().flex_wrap() // the hint drops to a second line when the primary label is long
+              .when(Boolean(primary), (x) => x.child(button("pid-go", this.busy ? "lancement…" : primary, "↵", true, (cx) => cx.spawn(async (cx) => this.launch(cx)), Boolean(th?.loading) || this.busy)))
               .child(button("pid-gh", "Ouvrir sur GitHub ↗", "o", false, () => this.openGitHub(sel)))
               .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", "r", false, (cx) => this.read(cx))))
               .child(div().flex_1())
-              .child(div().text_size(11).text_color(t.dim).child("↑↓ choisir · ↵ lancer · esc")))
-            .when(Boolean(this.note), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.note)))
+              .child(div().flex_none().text_size(11).text_color(t.dim).child("↑↓ · esc")))
+            .when(Boolean(this.noteFor(sel)), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.noteFor(sel))))
             .when(Boolean(this.error), (x) => x.child(div().text_size(12).text_color(t.blocked).child(this.error)))))));
   }
 
