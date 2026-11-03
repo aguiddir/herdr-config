@@ -6,6 +6,9 @@
 !/install.sh
 !/keys.json
 !/settings.json
+!/layouts/
+/layouts/*
+!/layouts/mine.json
 !/mods/
 /mods/*
 !/mods/start-work/
