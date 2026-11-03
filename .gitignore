@@ -11,6 +11,8 @@
 !/mods/start-work/
 !/mods/clean-merged/
 !/mods/cockpit/
+!/mods/pr-inbox/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
+.superpowers/

@@ -1,0 +1,104 @@
+// Pure helpers for pr-inbox: which section a pull request falls in, what is new, how a row
+// reads, and the prompts Claude gets. Checked by lib.test.mjs. Inputs are what gh gives:
+// `gh search prs --json …`, `gh api notifications`, `gh pr view --json …`.
+
+export const SECTIONS = [["review", "À relire", "blocked"], ["back", "Retour sur mes PR", "ansi5"], ["wait", "Mes PR en attente", "working"]];
+const ORDER = { review: 0, back: 1, wait: 2 };
+// Reasons that mean someone wrote on my PR: a review or a comment comes as `author`.
+const BACK = new Set(["author", "comment", "mention"]);
+
+// gitmoji: no glyph in the UI font (as start-work does).
+export const bare = (title) => title.replace(/^[\p{Extended_Pictographic}️\s]+/u, "");
+
+// The PR a notification is about, or null (an issue, a discussion).
+export function prOf(n) {
+  const m = n.subject?.type === "PullRequest" && n.subject.url?.match(/\/pulls\/(\d+)$/);
+  return m ? { repo: n.repository.full_name, number: Number(m[1]) } : null;
+}
+
+// One word for the whole rollup: a failure wins, then something still running, else ok.
+// A StatusContext has `state`, a CheckRun `status` and `conclusion`.
+export function ci(rollup) {
+  if (!rollup?.length) return null;
+  const one = (c) =>
+    "state" in c ? (c.state === "SUCCESS" ? "ok" : c.state === "PENDING" || c.state === "EXPECTED" ? "run" : "ko")
+    : c.status !== "COMPLETED" ? "run"
+    : ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(c.conclusion) ? "ok" : "ko";
+  const all = rollup.map(one);
+  return all.includes("ko") ? "ko" : all.includes("run") ? "run" : "ok";
+}
+
+// Who reviewed a PR other than its author, in order of first review.
+const reviewers = (row) => (row ? [...new Set(row.reviews.filter((r) => r.author !== row.author).map((r) => r.author))] : []);
+
+// Rows for the drawer and the dialog: review (asked of me), back (mine, someone wrote),
+// wait (mine, nothing new), newest first within a section. details: gh pr view by key.
+export function rowsOf({ requested, mine, notifs, details, me }) {
+  const byKey = new Map();
+  for (const n of notifs) {
+    const pr = prOf(n);
+    if (!pr) continue;
+    const k = `${pr.repo}#${pr.number}`;
+    byKey.set(k, [...(byKey.get(k) ?? []), n]);
+  }
+  const row = (p, isMine) => {
+    const repo = p.repository.nameWithOwner;
+    const key = `${repo}#${p.number}`;
+    const d = details[key];
+    const ns = byKey.get(key) ?? [];
+    const reviews = (d?.reviews ?? []).map((r) => ({ author: r.author?.login ?? "?", state: r.state, body: r.body ?? "", submittedAt: r.submittedAt }));
+    return {
+      key, repo, name: p.repository.name, number: p.number, title: bare(p.title), url: p.url,
+      branch: d?.headRefName ?? null, headOid: d?.headRefOid ?? null, fork: Boolean(d?.isCrossRepository),
+      author: p.author?.login ?? "?", mine: isMine, draft: Boolean(p.isDraft),
+      section: !isMine ? "review" : ns.some((n) => BACK.has(n.reason)) ? "back" : "wait",
+      decision: d?.reviewDecision ?? "", ci: ci(d?.statusCheckRollup), updatedAt: Date.parse(p.updatedAt),
+      reviews, remarks: reviews.filter((r) => r.author !== me && (r.state !== "APPROVED" || r.body)).length,
+      notifs: ns.map((n) => n.id),
+      additions: d?.additions ?? null, deletions: d?.deletions ?? null, changedFiles: d?.changedFiles ?? null, body: d?.body ?? "",
+    };
+  };
+  const rows = new Map();
+  for (const p of requested) { const r = row(p, false); rows.set(r.key, r); }
+  for (const p of mine) { const r = row(p, true); if (!rows.has(r.key)) rows.set(r.key, r); }
+  return [...rows.values()].sort((a, b) => ORDER[a.section] - ORDER[b.section] || b.updatedAt - a.updatedAt);
+}
+
+// The notifications never seen before (about a PR), and the ids to remember. The first
+// time ever (seen null) nothing is new: no storm of toasts for what was already there.
+// ponytail: seen is capped at 500 ids, enough for weeks; a thread read on GitHub leaves the list anyway.
+export function fresh(notifs, seen) {
+  const ids = notifs.map((n) => n.id);
+  if (seen === null) return { fresh: [], seen: ids };
+  const old = new Set(seen);
+  return { fresh: notifs.filter((n) => !old.has(n.id) && prOf(n)), seen: [...new Set([...seen, ...ids])].slice(-500) };
+}
+
+export function toastFor(n, row) {
+  const pr = prOf(n);
+  const body = row ? `${row.name} #${row.number} · ${row.title}` : `${n.repository.full_name.split("/")[1]} #${pr?.number} · ${bare(n.subject.title ?? "")}`;
+  if (n.reason === "review_requested") return { title: `${row?.author ?? "?"} te demande une review`, body };
+  const who = reviewers(row).at(-1);
+  return { title: who ? `${who} a relu #${pr?.number}` : `Du nouveau sur #${pr?.number}`, body };
+}
+
+export function ago(ms) {
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return m < 1 ? "à l'instant" : h < 1 ? `il y a ${m} min` : d < 1 ? `il y a ${h} h` : d < 2 ? "hier" : `il y a ${d} j`;
+}
+
+// A row's second line.
+export function sub(row, now) {
+  const when = ago(now - row.updatedAt);
+  const who = reviewers(row);
+  if (row.section === "review") return `${row.name} · ${row.author} · ${when}`;
+  if (row.section === "back") return `${row.name} · ${who.join(" · ") || "—"} · ${row.remarks} remarque${row.remarks > 1 ? "s" : ""} · ${when}`;
+  return `${row.name} · ${row.decision === "APPROVED" ? `approuvée par ${who.join(" · ")}` : "aucune review"} · ${when}`;
+}
+
+// The theme color of a row's dot.
+export function dotOf(row) {
+  if (row.section === "review") return "blocked";
+  if (row.section === "back") return row.decision === "CHANGES_REQUESTED" ? "blocked" : "ansi5";
+  return row.decision === "APPROVED" ? "done" : "working";
+}
