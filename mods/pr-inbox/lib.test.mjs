@@ -1,6 +1,6 @@
 // node mods/pr-inbox/lib.test.mjs
 import assert from "node:assert/strict";
-import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf } from "./lib.js";
+import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf, threads, reviewPrompt, fixPrompt } from "./lib.js";
 
 assert.equal(bare("♻️ POSO-112: Build"), "POSO-112: Build");
 assert.deepEqual(prOf({ subject: { type: "PullRequest", url: "https://api.github.com/repos/o/r/pulls/203" }, repository: { full_name: "o/r" } }), { repo: "o/r", number: 203 });
@@ -74,4 +74,36 @@ assert.equal(sub(rows[0], now), "renoshield · yoannwicker · il y a 1 h");
 assert.equal(sub(rows[1], now), "renoshield · brondon-ung · yoannwicker · 2 remarques · il y a 2 h");
 assert.equal(sub(rows[2], now), "renoshield · aucune review · il y a 30 min");
 assert.equal(sub({ ...rows[2], decision: "APPROVED", reviews: [{ author: "mlefevre", state: "APPROVED", body: "", submittedAt: "" }] }, now), "renoshield · approuvée par mlefevre · il y a 30 min");
+
+// Inline comments attach to their review by id, replies right under their parent;
+// comments of an unknown review make a trailing thread per author.
+// Reviews and comments as the REST API gives them (gh api …/pulls/N/reviews and /comments): the
+// comments name their review by its database id, which `gh pr view --json reviews` doesn't carry.
+const reviews = [{ id: 5700405921, user: { login: "brondon-ung" }, state: "COMMENTED", body: "Relu", submitted_at: "2026-11-03T09:01:58Z" }, { id: 5700435778, user: { login: "yoannwicker" }, state: "CHANGES_REQUESTED", body: "", submitted_at: "2026-11-03T11:54:54Z" }];
+const comments = [
+  { id: 10, pull_request_review_id: 5700435778, path: "a/B.java", line: 42, original_line: 40, body: "Pourquoi un Optional ?", user: { login: "yoannwicker" }, in_reply_to_id: null },
+  { id: 11, pull_request_review_id: 5700435778, path: "a/B.java", line: null, original_line: 42, body: "Parce que.", user: { login: "aguiddir" }, in_reply_to_id: 10 },
+  { id: 12, pull_request_review_id: 5700405921, path: "t/It.java", line: 84, original_line: 84, body: "Un second test", user: { login: "brondon-ung" }, in_reply_to_id: null },
+  { id: 13, pull_request_review_id: 1, path: "c.ts", line: 1, original_line: 1, body: "orphelin", user: { login: "mlefevre" }, in_reply_to_id: null },
+];
+const th = threads(reviews, comments);
+assert.deepEqual(th.map((t) => [t.author, t.comments.map((c) => [c.line, c.reply])]), [["brondon-ung", [[84, false]]], ["yoannwicker", [[42, false], [42, true]]], ["mlefevre", [[1, false]]]]);
+assert.equal(th[2].state, "COMMENTED");
+assert.equal(th[0].submittedAt, "2026-11-03T09:01:58Z");
+
+const row = { number: 187, repo: "softwarevidal/renoshield", title: "POSO-103: Checks", branch: "feat/poso-103" };
+const rp = reviewPrompt(row);
+assert.match(rp, /PR #187 de softwarevidal\/renoshield/);
+assert.match(rp, /« POSO-103: Checks »/);
+assert.match(rp, /feat\/poso-103/);
+assert.match(rp, /code-review/);
+assert.match(rp, /Ne poste rien sur GitHub/);
+const fp = fixPrompt(row, th);
+assert.match(fp, /superpowers:receiving-code-review/);
+assert.match(fp, /--fixup/);
+assert.match(fp, /Ne réponds pas sur GitHub/);
+assert.match(fp, /- yoannwicker \(demande des changements\)/);
+assert.match(fp, /  - a\/B\.java:42 — Pourquoi un Optional \?/);
+assert.match(fp, /    ↳ aguiddir : Parce que\./);
+assert.match(fp, /- brondon-ung \(a commenté\) : Relu/);
 console.log("ok");
