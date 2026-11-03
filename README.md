@@ -9,6 +9,8 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `mods/start-work/` | la fenêtre « Commencer un travail » |
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
+| `mods/pr-inbox/` | les PR GitHub qui m'attendent : un tiroir sur le bord droit, un toast quand une review tombe, et un Claude lancé sur la PR (`ctrl-shift-g`) |
+| `layouts/mine.json` | mon layout : `main` plus le tiroir des PR |
 
 ## start-work
 
@@ -58,6 +60,40 @@ La branche par défaut, celle du checkout principal et celles dans lesquelles un
 
 Les espaces fermés sont ceux dont tous les terminaux sont dans le worktree. Le worktree est retiré sans `--force`, mais ses fichiers ignorés par git (un `.env`, par exemple) partent avec lui. Une branche supprimée ne se retrouve pas dans le reflog : seulement par `git fsck --unreachable`, tant que git n'a pas fait le ménage.
 
+## pr-inbox
+
+Un tiroir flottant sur le bord droit de la fenêtre (layout `mine`) : replié, 52 px, un compteur par section et un point par PR ; il s'ouvre au survol. `ctrl-shift-g`, ou un clic sur une ligne, ouvre le dialogue.
+
+| Le tiroir, replié | Le tiroir, ouvert |
+|---|---|
+| ![Tiroir replié](mods/pr-inbox/preview-folded.png) | ![Tiroir ouvert](mods/pr-inbox/preview-drawer.png) |
+
+![Dialogue](mods/pr-inbox/preview.png)
+
+Trois sections, tous repos confondus :
+
+| Section | D'où ça vient |
+|---|---|
+| **À relire** : les PR des autres où ma review est demandée | `gh search prs --review-requested=@me` |
+| **Retour sur mes PR** : mes PR avec une review ou un commentaire pas encore lu | `gh api notifications` |
+| **Mes PR en attente** : mes autres PR ouvertes (en vert : approuvée) | `gh search prs --author=@me` |
+
+Le tiroir interroge GitHub toutes les 90 s. Une notification jamais vue donne un toast (« X te demande une review », « Y a relu #N ») ; le cliquer ouvre le dialogue sur la PR. Au premier lancement rien n'est signalé : ce qui existait déjà est marqué vu.
+
+Le dialogue : la liste à gauche, la PR à droite, avec sa branche, sa CI, ses fichiers, puis chaque review avec son verdict et ses commentaires `fichier:ligne`, en lecture seule. Répondre se fait sur GitHub (« Ouvrir sur GitHub ↗ »). « Marquer lu » marque lues les notifications de la PR.
+
+- `↑↓` choisit, `↵` lance, `o` ouvre la PR sur GitHub, `r` la marque lue, `esc` ferme ;
+- **▶ Relire avec Claude**, sur une PR à relire : la branche est sortie dans un worktree (`pull/<n>/head` pour un fork), un espace ouvert dessus, et Claude lancé avec « relis la PR #N : `/code-review high --comment`, puis `gh pr review --comment` s'il y a des trouvailles, `--approve` sinon ». La review est postée en mon nom, et la PR quitte « À relire » au poll suivant. La branche est à quelqu'un d'autre, alors Claude démarre en mode restreint (`--setting-sources user --strict-mcp-config`) : le `.claude/` du dépôt (hooks, env, skills, CLAUDE.md) et son `.mcp.json` ne sont pas chargés, seulement ma config à moi. Un worktree hérite de la confiance du checkout principal, rien d'autre ne les arrêterait ;
+- **▶ Traiter les remarques avec Claude**, sur un retour : l'espace déjà ouvert sur la branche est réutilisé, et Claude reçoit les remarques recopiées en entier, avec `superpowers:receiving-code-review` : il vérifie chaque remarque, corrige en commits `--fixup`, et ne répond pas sur GitHub.
+
+**Claude prépare, moi je poste** : le mod n'écrit jamais sur GitHub, sauf « marquer lu ». La ligne sous les boutons dit ce que `↵` va faire avant qu'on appuie.
+
+Le dépôt local d'une PR est retrouvé par l'`origin` des espaces ouverts et des worktrees du repo ; s'il n'y en a pas, le mod demande le dossier et le garde dans `mods/pr-inbox/config.json` :
+
+```json
+"repos": { "softwarevidal/renoshield": "/home/moi/IdeaProjects/renoshield" }
+```
+
 ## Prérequis
 
 ```bash
@@ -83,6 +119,8 @@ git init -b main && git remote add origin <url-du-repo>
 git fetch origin && git checkout -f main
 ./install.sh
 ```
+
+Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. Herdr ne permet pas d'étendre un layout fourni : `mine.json` est une copie de son `main.json` plus deux ajouts, la colonne `gutter` de 50 px dans `work-body` et le bloc `floating`. Quand Herdr change `main.json`, refaire la copie : `diff layouts/main.json layouts/mine.json` ne doit montrer que ces deux ajouts.
 
 ## Installer start-work
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# What the mods here need on this machine. Installs acli (no sudo), logs gh and
+# What the mods here need on this machine: gh for start-work, clean-merged and pr-inbox,
+# acli for start-work. Installs acli (no sudo), logs gh and
 # acli in when they aren't, and checks each mod. Safe to re-run.
 set -euo pipefail
 home=$(cd "$(dirname "$0")" && pwd)
