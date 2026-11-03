@@ -1,6 +1,6 @@
 // node mods/start-work/lib.test.mjs
 import assert from "node:assert/strict";
-import { slug, branchFor, existingWork, ticketSource, ticketQueries, sourceLabel } from "./lib.js";
+import { slug, branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn } from "./lib.js";
 
 assert.equal(slug("🐛 Data comparison fails on a column présent"), "data-comparison-fails-on-a-column-present");
 assert.equal(slug("x".repeat(30) + " " + "y".repeat(30)), "x".repeat(30));
@@ -32,4 +32,15 @@ assert.equal(ticketSource("https://vidalgroup.atlassian.net/jira/people/637cbe03
 assert.deepEqual(ticketQueries({ kind: "project", key: "CF" })[1], 'project = "CF" AND statusCategory != Done ORDER BY updated DESC');
 assert.equal(ticketQueries({ kind: "filter", id: "1" }, "labels = X ORDER BY Rank ASC")[0], "(labels = X) AND statusCategory != Done ORDER BY updated DESC");
 assert.deepEqual([ticketSource("POSO"), ticketSource("https://x/issues/?filter=7"), ticketSource("labels = A")].map(sourceLabel), ["POSO", "filtre 7", "labels = A"]);
+const M = "/h/data-delta", N = "/h/data-delta/.claude/worktrees/foo";
+const sp = (id, folder, ...tabs) => ({ id, folder, tabs: tabs.map((t) => ({ id: t })) });
+// a nested worktree's terminal, after one elsewhere, is not in the checkout (checkouts as an iterator, as main.js passes them)
+const nested = [[{ tab: "tX", cwd: "/h/other" }, { tab: "tN", cwd: N }], [sp("x", "/h", "tX"), sp("nested", "/h", "tN")]];
+assert.equal(spaceIn(M, new Map([["dev", M], ["foo", N]]).values(), ...nested), null);
+assert.equal(spaceIn(N, new Map([["dev", M], ["foo", N]]).values(), ...nested).space.id, "nested");
+assert.equal(spaceIn(M, [M], [{ tab: "tM", cwd: `${M}/src` }], [sp("main", "/h", "tM")]).space.id, "main");
+// its terminal cd'd away: the space whose terminals start there, no tab
+assert.deepEqual(spaceIn("/h/wt", [], [{ tab: "tW", cwd: "/h" }], [sp("wt", "/h/wt", "tW")]), { space: sp("wt", "/h/wt", "tW"), tab: null });
+// a space whose folder is the checkout loses to the one with a terminal in it (data-delta, PR 275)
+assert.equal(spaceIn(M, [M], [{ tab: "t5", cwd: M }], [sp("cerner-flow", M, "t11"), sp("data-delta", "/h", "t5")]).space.id, "data-delta");
 console.log("ok");

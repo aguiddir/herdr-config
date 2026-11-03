@@ -53,6 +53,22 @@ export function ticketQueries(source, filterJql) {
   return [`(${base}) AND ${open}`];
 }
 
+// The space showing a terminal in this checkout, and that terminal's tab. A terminal
+// under it counts, unless it is in another checkout nested in it (.claude/worktrees/…):
+// checkouts are the repo's folders, any iterable. A space's folder is where its new
+// terminals start, not where they are, so it only answers when no terminal is there
+// (one cd'd away). panes and spaces: as Herdr's panes() and spaces() give them.
+export function spaceIn(path, checkouts, panes, spaces) {
+  const dirs = [path, ...checkouts]; // once: an iterator is spent after one pass
+  const under = (cwd, dir) => cwd === dir || cwd.startsWith(`${dir}/`);
+  const checkout = (cwd) => dirs.filter((dir) => under(cwd, dir)).sort((a, b) => b.length - a.length)[0];
+  const inside = panes.find((p) => p.cwd && checkout(p.cwd) === path);
+  const space = inside && spaces.find((sp) => sp.tabs.some((t) => t.id === inside.tab));
+  if (space) return { space, tab: inside.tab };
+  const started = spaces.find((sp) => sp.folder === path);
+  return started ? { space: started, tab: null } : null;
+}
+
 // How a source reads in the dialog, without asking Jira.
 export function sourceLabel(source) {
   return source.kind === "project" ? source.key : source.kind === "filter" ? `filtre ${source.id}` : source.jql;
