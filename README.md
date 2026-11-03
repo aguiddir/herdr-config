@@ -18,8 +18,9 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | ![Onglet Jira](mods/start-work/preview.png) | ![Onglet GitHub](mods/start-work/preview-github.png) |
 
 - l'onglet **Jira** liste les tickets ouverts du repo (voir plus bas d'où ils viennent) : d'abord les miens, puis ceux sans personne, puis ceux des autres. Une clé tapée en entier (`POSO-110`) est cherchée dans tout Jira ;
-- l'onglet **GitHub** liste les issues ouvertes du repo ;
-- `tab` passe d'un onglet à l'autre. Taper `#12` ouvre GitHub, une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
+- l'onglet **Issues** liste les issues ouvertes du repo ;
+- l'onglet **PR** liste les PR ouvertes : choisir une PR ouvre un worktree sur sa branche, pour la relire ou la modifier (celle d'un fork est récupérée par `pull/<n>/head`) ;
+- `tab` passe à l'onglet suivant, `shift-tab` au précédent. Taper `#12` ouvre Issues (sauf depuis PR), une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
 
 **Créer** fait un worktree dans `~/.herdr/worktrees/<repo>/<branche>`, à partir de `origin/HEAD`. Il ouvre dessus un espace avec Claude. Pour un ticket Jira qui n'est pas à moi, la case « M'assigner » (cochée par défaut) me l'assigne, et le passe « En cours » s'il était encore à faire.
 

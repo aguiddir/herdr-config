@@ -8,6 +8,8 @@ assert.equal(branchFor({ kind: "jira", key: "CF-12", title: "Corriger l'export" 
 assert.equal(branchFor({ kind: "jira", key: "POSO-110", title: "Version actuelle" }, "feat/{key}-{slug}"), "feat/poso-110-version-actuelle");
 assert.equal(branchFor({ kind: "issue", number: 277, title: "⚡️ Skip key ranges" }), "277-skip-key-ranges");
 assert.equal(branchFor({ kind: "free", title: "refacto du cache" }), "refacto-du-cache");
+assert.equal(branchFor({ kind: "pr", number: 164, branch: "feat/poso-98-current-version-pane", title: "t" }), "feat/poso-98-current-version-pane");
+assert.equal(branchFor({ kind: "pr", number: 300, branch: "main", fork: true, title: "t" }), "pr/300-main");
 const prs = [
   { number: 200, headRefName: "release/2.3", title: "Release 2.3: POSO-97, POSO-98", url: "u200" },
   { number: 164, headRefName: "feat/poso-98-current-version-pane", title: "✨ POSO-97: Show the current version", url: "u164" },

@@ -1,4 +1,4 @@
-// Start work: pick a Jira ticket of the repo's sprint, a GitHub issue, or type
+// Start work: pick a Jira ticket of the repo's sprint, a GitHub issue or PR, or type
 // a description. Makes a worktree (where the worktree mod puts them) and a space
 // on it running Claude. Opened by mod.open:start-work.
 // Jira: config.json maps repo names to project keys; acli (Atlassian's CLI,
@@ -32,6 +32,8 @@ async function acli(args) {
 }
 
 const FIELDS = "key,summary,status,assignee";
+const TABS = ["jira", "issue", "pr"];
+const bare = (title) => title.replace(/^[\p{Extended_Pictographic}️\s]+/u, ""); // gitmoji: no glyph in the UI font
 const CONFIG = () => `${appHome()}/mods/start-work/config.json`;
 
 const ticket = (i, me) => ({
@@ -52,20 +54,21 @@ export default class StartWork extends View {
     this.repo = undefined; // undefined: looking, null: not in git
     this.tickets = [];
     this.issues = [];
-    this.notes = { jira: [], issue: [] }; // why a source is missing
-    this.src = "jira"; // the tab shown: "jira" or "issue"
+    this.notes = { jira: [], issue: [], pr: [] }; // why a source is missing
+    this.src = "jira"; // the tab shown: one of TABS
     this.assign = true;
     this.busy = false;
     this.error = "";
     this.branchOf = null; // the row the branch field was filled from
-    this.input = InputState.new({ placeholder: "Clé Jira, #issue, ou décris le travail" });
+    this.input = InputState.new({ placeholder: "Clé Jira, #issue ou PR, ou décris le travail" });
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.at = 0; this.follow(); this.error = ""; this.lookup(cx); this.sync(); cx.notify(); });
     this.input.on("submit", (_e, cx) => this.go(cx));
     this.branch = InputState.new({ placeholder: "branche" });
     this.branch.on("submit", (_e, cx) => this.go(cx));
     this.branch.on("change", (_e, cx) => cx.notify());
     this.branches = []; // newest first, local and origin's
-    this.prs = []; // open ones
+    this.prs = []; // open ones, as gh gives them
+    this.pulls = []; // the same, as rows of the PR tab
     this.found = {}; // tickets fetched by their exact key, outside the sprint
     this.ready = false; // branches and PRs loaded: before, Créer can't tell new work from work under way
     this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10782 · labels = DATADELTA" });
@@ -76,8 +79,15 @@ export default class StartWork extends View {
     this.handle = cx.focus_handle();
     // The focused Input binds tab itself, and bindings run before on_key_down:
     // a binding of ours, at the Input's depth, comes first.
-    for (const context of ["StartWork", "StartWork > Input"]) {
-      try { cx.bind_keys([{ keystroke: "tab", action: "sw_switch_tab", context }]); } catch {}
+    // Only the search field's: in the branch or source field, tab would change the row and
+    // overwrite what is being typed. The keymap is the app's and outlives the dialog (and,
+    // like globalThis, a reload of the mod): bind once, once it worked; say if it didn't.
+    const app = /** @type {any} */ (globalThis);
+    if (!app.startWorkTabKeys) {
+      try {
+        for (const context of ["StartWork", "StartWorkSearch > Input"]) cx.bind_keys([{ keystroke: "tab", action: "sw_next_tab", context }, { keystroke: "shift-tab", action: "sw_prev_tab", context }]);
+        app.startWorkTabKeys = true;
+      } catch (e) { notify({ title: "start-work : tab ne changera pas d'onglet dans la recherche", body: String(e.message ?? e), level: "warning" }); }
     }
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
     cx.spawn(async (cx) => this.load(cx));
@@ -109,14 +119,16 @@ export default class StartWork extends View {
     await git(this.repo.main, ["fetch", "--quiet", "origin"]);
     const refs = await git(this.repo.main, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"]);
     this.branches = [...new Set(refs.out.split("\n").filter((b) => b && b !== "origin" && b !== "origin/HEAD").map((b) => b.replace(/^origin\//, "")))];
-    const r = await exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,title,url"], { cwd: this.repo.main });
-    if (r.code === 0) this.prs = JSON.parse(r.stdout);
+    const r = await exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,title,url,author,isDraft,isCrossRepository"], { cwd: this.repo.main });
+    if (r.code !== 0) return this.notes.pr.push(`GitHub : ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
+    this.prs = JSON.parse(r.stdout);
+    this.pulls = this.prs.map((p) => ({ kind: "pr", id: `pr-${p.number}`, number: p.number, branch: p.headRefName, title: bare(p.title), who: p.author?.login ?? "", draft: p.isDraft, fork: p.isCrossRepository }));
   }
 
   async loadIssues() {
     const r = await exec("gh", ["issue", "list", "--limit", "50", "--json", "number,title,url"], { cwd: this.repo.main });
     if (r.code !== 0) return this.notes.issue.push(`GitHub : ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
-    this.issues = JSON.parse(r.stdout).map((i) => ({ kind: "issue", id: `issue-${i.number}`, number: i.number, title: i.title.replace(/^[\p{Extended_Pictographic}️\s]+/u, ""), url: i.url })); // gitmoji: no glyph in the UI font
+    this.issues = JSON.parse(r.stdout).map((i) => ({ kind: "issue", id: `issue-${i.number}`, number: i.number, title: bare(i.title), url: i.url }));
   }
 
   // Every source's open tickets, once each, mine first.
@@ -244,8 +256,12 @@ export default class StartWork extends View {
   // "#12" means GitHub, an exact Jira key means Jira: show that tab.
   follow() {
     const t = this.text.trim();
-    if (t.startsWith("#")) this.src = "issue";
+    if (t.startsWith("#") && this.src === "jira") this.src = "issue";
     else if (JIRA_KEY.test(t.toUpperCase())) this.src = "jira";
+  }
+
+  cycle(step) {
+    this.switchTo(TABS[(TABS.indexOf(this.src) + step + TABS.length) % TABS.length]);
   }
 
   switchTo(src) {
@@ -263,6 +279,7 @@ export default class StartWork extends View {
     return {
       jira: JIRA_KEY.test(key) ? (exact ? [exact] : []) : this.tickets.filter((t) => hit(`${t.key} ${t.title}`)),
       issue: this.issues.filter((i) => hit(`${i.number} ${i.title}`)),
+      pr: this.pulls.filter((p) => hit(`${p.number} ${p.title} ${p.branch} ${p.who}`)),
     };
   }
 
@@ -310,16 +327,23 @@ export default class StartWork extends View {
     if (s.kind === "jira" && !s.mine && this.assign) await this.take(s);
     await git(this.repo.main, ["worktree", "prune"]); // forget worktrees whose folder was deleted by hand
     let path = await this.checkoutOf(branch);
+    const head = s.kind === "pr" ? await this.prHead(s) : null;
+    // Checked out already, maybe with work in progress: say it is behind, don't move it.
+    const behind = head && path && (await git(this.repo.main, ["rev-list", "--count", `${branch}..${head}`])).out;
+    if (behind && behind !== "0") notify({ title: `${branch} n'a pas ${behind} commit(s) de la PR #${s.number}`, body: `Elle est sortie dans ${path.replace(home(), "~")} : mets-la à jour là-bas (git pull).`, level: "warning" });
     if (!path) {
       const has = async (ref) => (await git(this.repo.main, ["show-ref", "--verify", "--quiet", ref])).ok;
-      const exists = (await has(`refs/heads/${branch}`)) || (await has(`refs/remotes/origin/${branch}`));
+      const local = await has(`refs/heads/${branch}`);
+      if (head && local) await this.catchUp(s, branch, head);
+      const exists = local || (await has(`refs/remotes/origin/${branch}`));
       path = `${home()}/.herdr/worktrees/${this.repo.name}/${branch.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
       // An existing branch is checked out as is (one only on origin gets a local branch tracking it);
-      // a new one starts from the remote's default branch, not from whatever is checked out here.
+      // a new one starts from the PR's head (a fork's, or a name typed for a PR), else from the
+      // remote's default branch, not from whatever is checked out here.
       let add = ["worktree", "add", path, branch];
       if (!exists) {
-        const base = await git(this.repo.main, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-        add = ["worktree", "add", "--no-track", "-b", branch, path, base.ok ? base.out : "HEAD"];
+        const base = head ?? (await git(this.repo.main, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).out;
+        add = ["worktree", "add", "--no-track", "-b", branch, path, base || "HEAD"];
       }
       const r = await git(this.repo.main, add);
       if (!r.ok) throw new Error(r.err || "git worktree add a échoué.");
@@ -328,6 +352,23 @@ export default class StartWork extends View {
     if (open) return run("space.select", { id: open.id });
     // Unnamed, so the space follows the checkout folder and nests under its repo.
     run("space.new", { folder: path, tab: "claude", argv: ["claude"] });
+  }
+
+  // The PR's head commit as GitHub has it now: pull/N/head holds it for a fork's PR too.
+  async prHead(s) {
+    const r = await git(this.repo.main, ["fetch", "--quiet", "origin", `pull/${s.number}/head`]);
+    if (!r.ok) throw new Error(r.err || `Impossible de récupérer la PR #${s.number}.`);
+    return (await git(this.repo.main, ["rev-parse", "FETCH_HEAD"])).out;
+  }
+
+  // A PR is checked out as it is now: a local branch behind its head moves up to it. One
+  // ahead (commits not pushed yet) stays. One that diverged (the PR was rebased, or both
+  // moved) stays too, and is said: moving it would lose its commits.
+  async catchUp(s, branch, head) {
+    const contains = async (a, b) => (await git(this.repo.main, ["merge-base", "--is-ancestor", a, b])).ok;
+    if (await contains(head, branch)) return;
+    if (await contains(branch, head)) return void (await git(this.repo.main, ["branch", "--force", branch, head])); // a fast-forward: nothing lost
+    notify({ title: `${branch} et la PR #${s.number} ont divergé`, body: "La PR a été réécrite (rebase, force-push) ou la branche a des commits à elle : elle est ouverte telle quelle.", level: "warning" });
   }
 
   // The folder where the branch is already checked out, if any.
@@ -380,6 +421,7 @@ export default class StartWork extends View {
       const [tag, tagColor, right, rightColor] =
         r.kind === "jira" ? [r.key, t.ansi4, `${r.mine ? "toi" : r.who ?? "non assigné"} · ${r.status}`, r.who ? t.dim : t.ansi3]
         : r.kind === "issue" ? [`#${r.number}`, t.ansi2, "", t.dim]
+        : r.kind === "pr" ? [`PR #${r.number}`, t.ansi5, `${r.who}${r.draft ? " · brouillon" : ""}`, t.dim]
         : ["✎", t.muted, "sans ticket", t.dim];
       return h_flex()
         .id(r.id)
@@ -421,7 +463,8 @@ export default class StartWork extends View {
       .id("start-work")
       .track_focus(this.handle)
       .key_context("StartWork")
-      .on_action("sw_switch_tab", (_e, cx) => { this.switchTo(this.src === "jira" ? "issue" : "jira"); cx.notify(); })
+      .on_action("sw_next_tab", (_e, cx) => { this.cycle(1); cx.notify(); })
+      .on_action("sw_prev_tab", (_e, cx) => { this.cycle(-1); cx.notify(); })
       .on_key_down((e, cx) => this.key(e, cx))
       .size_full()
       .p(16)
@@ -432,13 +475,14 @@ export default class StartWork extends View {
       .when(this.repo === null, (el) => el.child(div().text_color(t.muted).child("Le terminal actif n'est pas dans un repo git.")))
       .when(Boolean(this.repo), (el) =>
         el
-          .child(field(this.input).border_color(t.accent))
+          .child(v_flex().key_context("StartWorkSearch").child(field(this.input).border_color(t.accent)))
           .child(
             h_flex()
               .gap(4)
               .items_center()
               .child(tab("jira", "Jira"))
-              .child(tab("issue", `GitHub · ${this.repo.name}`))
+              .child(tab("issue", "Issues"))
+              .child(tab("pr", "PR"))
               .child(div().flex_1())
               .child(div().text_size(11).text_color(t.dim).child("tab pour changer")),
           )
@@ -462,7 +506,7 @@ export default class StartWork extends View {
         h_flex()
           .gap(10)
           .items_center()
-          .child(div().flex_1().text_size(11).text_color(t.dim).child(this.busy ? "création…" : !this.ready && this.repo ? "chargement des branches…" : "↑↓ choisir · tab Jira/GitHub · ↵ créer · esc fermer"))
+          .child(div().flex_1().text_size(11).text_color(t.dim).child(this.busy ? "création…" : !this.ready && this.repo ? "chargement des branches…" : "↑↓ choisir · tab onglet suivant · ↵ créer · esc fermer"))
           .child(h_flex().id("sw-cancel").h(30).px(14).items_center().rounded(6).border(1).border_color(t.input).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.close()).child("Annuler"))
           .child(h_flex().id("sw-go").h(30).px(14).items_center().rounded(6).bg(!sel || this.busy || !this.ready ? t.raised : t.solid).text_color(!sel || this.busy || !this.ready ? t.dim : t.solid_foreground).font_semibold().cursor_pointer().on_click((_e, cx) => this.go(cx)).child(old ? "Reprendre ↵" : "Créer ↵")),
       );
