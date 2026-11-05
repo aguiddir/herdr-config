@@ -138,7 +138,7 @@ export default class PrInbox extends View {
 
   initDialog(cx) {
     setShared(OPEN, true);
-    this.key = null; // the selected row, by key: the rows are rewritten by every poll
+    this.sel = null; // the selected row's key (not `key`: that is the key handler): the rows are rewritten by every poll
     this.threads = {}; // key -> { at: updatedAt, threads, loading?, error? }
     this.where = {}; // key -> { repo, path, open } : where ↵ would go, said before the click
     this.error = "";
@@ -165,14 +165,14 @@ export default class PrInbox extends View {
 
   selected() {
     const rows = this.rows();
-    return rows.find((r) => r.key === this.key) ?? rows[0];
+    return rows.find((r) => r.key === this.sel) ?? rows[0];
   }
 
   // Moves to the row the drawer or a toast asked for, if any, and loads its comments.
   follow(cx) {
     const key = shared(FOCUS)?.key;
     if (key) {
-      if (this.rows().some((r) => r.key === key)) this.key = key;
+      if (this.rows().some((r) => r.key === key)) this.sel = key;
       setShared(FOCUS, null);
     }
     this.loadThreads(cx);
@@ -214,7 +214,7 @@ export default class PrInbox extends View {
     const n = rows.length;
     if (e.key === "escape") return this.dismiss();
     if (e.key === "enter") return cx.spawn(async (cx) => this.launch(cx));
-    if ((e.key === "down" || e.key === "up") && n) this.key = rows[(rows.indexOf(this.selected()) + (e.key === "down" ? 1 : n - 1)) % n].key;
+    if ((e.key === "down" || e.key === "up") && n) this.sel = rows[(rows.indexOf(this.selected()) + (e.key === "down" ? 1 : n - 1)) % n].key;
     else return;
     this.loadThreads(cx);
     cx.stop_propagation();
@@ -340,7 +340,7 @@ export default class PrInbox extends View {
         list.push(
           h_flex().id(`pid-${r.key}`).px(10).py(7).gap(10).items_start().rounded(7).cursor_pointer()
             .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-            .on_click((_e, cx) => { this.key = r.key; this.loadThreads(cx); cx.notify(); })
+            .on_click((_e, cx) => { this.sel = r.key; this.loadThreads(cx); cx.notify(); })
             .child(div().size(8).mt(6).flex_none().rounded(4).bg(t[dotOf(r)]))
             .child(v_flex().flex_1().min_w(0)
               .child(div().truncate().text_size(12.5).text_color(t.foreground).child(`#${r.number} ${r.title}`))
