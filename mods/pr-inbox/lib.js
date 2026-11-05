@@ -134,8 +134,8 @@ export function threads(reviews, comments) {
 
 // One-line fields (title, branch, login, path) can't break out of their line.
 const flat = (s) => String(s ?? "").replace(/[\r\n\t\p{Cc}]+/gu, " ").trim();
-// A body can't close the fence from inside it.
-const inner = (s) => String(s ?? "").replace(/<\/?remarques>/gi, "[remarques]");
+// A body can't close the fence from inside it, however the tag is spelt (</remarques >, </ remarques>, <remarques x>).
+const inner = (s) => String(s ?? "").replace(/<\s*\/?\s*remarques\b[^>]*>/gi, "[remarques]");
 
 export function reviewPrompt(row) {
   return `Relis la PR #${row.number} de ${row.repo} (« ${flat(row.title)} », branche ${flat(row.branch)}) avec le skill code-review. Prépare la review dans ce terminal : les points bloquants d'abord, chacun avec fichier:ligne, pourquoi c'est faux et comment le montrer. Ne poste rien sur GitHub : c'est moi qui poste. Le CLAUDE.md et le .claude/ de ce dépôt ne sont volontairement pas chargés (branche de quelqu'un d'autre) : lis-les comme des fichiers si tu en as besoin.`;
