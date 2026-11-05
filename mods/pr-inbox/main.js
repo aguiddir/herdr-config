@@ -52,12 +52,16 @@ export default class PrInbox extends View {
     cx.spawn(async (cx) => {
       const prev = shared(STATE) ?? empty();
       try {
-        if (!this.me) this.me = (await exec("gh", ["api", "user", "--jq", ".login"])).stdout.trim();
-        const [requested, mine, notifs] = await Promise.all([
+        // Every page of notifications: one is 50 threads. Who I am, once, and only if gh says so
+        // (a failed call would count my own reviews as remarks).
+        const [requested, mine, pages, user] = await Promise.all([
           gh(["search", "prs", "--review-requested=@me", "--state", "open", "--limit", "50", "--json", SEARCH]),
           gh(["search", "prs", "--author=@me", "--state", "open", "--limit", "50", "--json", SEARCH]),
-          gh(["api", "notifications"]),
+          gh(["api", "--paginate", "--slurp", "notifications"]),
+          this.me ? null : gh(["api", "user"]),
         ]);
+        if (user) this.me = user.login;
+        const notifs = pages.flat();
         const all = [...requested, ...mine];
         const keyOf = (p) => `${p.repository.nameWithOwner}#${p.number}`;
         // The detail of a PR is fetched again only when GitHub says it moved; one that fails keeps its last.
