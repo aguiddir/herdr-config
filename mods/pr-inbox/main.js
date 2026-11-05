@@ -9,7 +9,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings, panes, spaces, appHome, home, readTextFile, writeTextFile, pickFolder } from "herdr";
-import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf } from "./lib.js";
+import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf, argvFor } from "./lib.js";
 import { localRepo, checkoutFor, checkoutsOf, spaceIn } from "./worktree.js";
 
 const POLL = 90000;
@@ -299,8 +299,8 @@ export default class PrInbox extends View {
       const task = r.section === "review" ? reviewPrompt(r) : fixPrompt(r, this.threads[r.key]?.threads ?? []);
       if (open) {
         run("space.select", { id: open.space.id });
-        run("tab.new", { space: open.space.id, name: "claude", folder: path, argv: ["claude"], task });
-      } else run("space.new", { folder: path, tab: "claude", argv: ["claude"], task }); // unnamed: the space follows the folder and nests under its repo
+        run("tab.new", { space: open.space.id, name: "claude", folder: path, argv: argvFor(r), task });
+      } else run("space.new", { folder: path, tab: "claude", argv: argvFor(r), task }); // unnamed: the space follows the folder and nests under its repo
       if (r.notifs.length) await this.markRead(r);
       notify({ title: `Claude lancé sur ${repo.name} · ${branchOf(r)}`, body: r.section === "review" ? `Review de la PR #${r.number}${open ? "" : " dans un nouvel espace"}.` : `Il traite les ${r.remarks} remarques de la PR #${r.number}.`, level: "success" });
       this.dismiss();

@@ -136,8 +136,14 @@ const flat = (s) => String(s ?? "").replace(/[\r\n\t\p{Cc}]+/gu, " ").trim();
 const inner = (s) => String(s ?? "").replace(/<\/?remarques>/gi, "[remarques]");
 
 export function reviewPrompt(row) {
-  return `Relis la PR #${row.number} de ${row.repo} (« ${flat(row.title)} », branche ${flat(row.branch)}) avec le skill code-review. Prépare la review dans ce terminal : les points bloquants d'abord, chacun avec fichier:ligne, pourquoi c'est faux et comment le montrer. Ne poste rien sur GitHub : c'est moi qui poste.`;
+  return `Relis la PR #${row.number} de ${row.repo} (« ${flat(row.title)} », branche ${flat(row.branch)}) avec le skill code-review. Prépare la review dans ce terminal : les points bloquants d'abord, chacun avec fichier:ligne, pourquoi c'est faux et comment le montrer. Ne poste rien sur GitHub : c'est moi qui poste. Le CLAUDE.md et le .claude/ de ce dépôt ne sont volontairement pas chargés (branche de quelqu'un d'autre) : lis-les comme des fichiers si tu en as besoin.`;
 }
+
+// How Claude starts on a PR. Someone else's branch is opened like VS Code's restricted mode:
+// the repo's .claude/ (settings, hooks, env, allow rules, skills, agents, CLAUDE.md) and
+// .mcp.json never load, only the person's own config. A worktree inherits the main checkout's
+// trust, so Claude Code would otherwise run them without asking. My own PR: as usual.
+export const argvFor = (row) => (row.section === "review" ? ["claude", "--setting-sources", "user", "--strict-mcp-config"] : ["claude"]);
 
 export function fixPrompt(row, threads) {
   const lines = threads.flatMap((t) => [

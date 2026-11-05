@@ -1,6 +1,6 @@
 // node mods/pr-inbox/lib.test.mjs
 import assert from "node:assert/strict";
-import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf, threads, reviewPrompt, fixPrompt, branchOf, matchOrigin } from "./lib.js";
+import { bare, prOf, ci, rowsOf, fresh, toastFor, ago, sub, dotOf, threads, reviewPrompt, fixPrompt, branchOf, matchOrigin, argvFor } from "./lib.js";
 
 assert.equal(bare("♻️ POSO-112: Build"), "POSO-112: Build");
 assert.deepEqual(prOf({ subject: { type: "PullRequest", url: "https://api.github.com/repos/o/r/pulls/203" }, repository: { full_name: "o/r" } }), { repo: "o/r", number: 203 });
@@ -96,6 +96,11 @@ assert.match(rp, /« POSO-103: Checks »/);
 assert.match(rp, /feat\/poso-103/);
 assert.match(rp, /code-review/);
 assert.match(rp, /Ne poste rien sur GitHub/);
+// Someone else's branch: its .claude/ (hooks, env, skills, CLAUDE.md) and .mcp.json never load.
+// A worktree inherits the main checkout's trust, so nothing else would stop them.
+assert.match(rp, /CLAUDE\.md/);
+assert.deepEqual(argvFor({ section: "review" }), ["claude", "--setting-sources", "user", "--strict-mcp-config"]);
+assert.deepEqual(argvFor({ section: "back" }), ["claude"]);
 const fp = fixPrompt(row, th);
 assert.match(fp, /superpowers:receiving-code-review/);
 assert.match(fp, /--fixup/);
