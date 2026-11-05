@@ -158,6 +158,10 @@ export function fixPrompt(row, threads) {
 
 // The local branch for a PR: its own, or for a fork's (its "main", "patch-1" is not ours)
 // pr/<n>-<branch>, as start-work names them.
+// The next row the arrows land on: by key, since shared() hands out a fresh object on every
+// read and the rows' identity never matches. Nothing chosen, or a row that left: the first row.
+export const step = (rows, sel, dir) => (rows.length ? rows[(Math.max(0, rows.findIndex((r) => r.key === sel)) + (dir > 0 ? 1 : rows.length - 1)) % rows.length].key : null);
+
 export const branchOf = (row) => (row.fork ? `pr/${row.number}-${row.branch}` : row.branch);
 
 // Does this origin URL name that GitHub repo? git@github.com:o/r.git, https://github.com/o/r(.git), ssh://git@github.com/o/r.git.

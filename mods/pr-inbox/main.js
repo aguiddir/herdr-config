@@ -7,9 +7,9 @@
 // GitHub but "mark read".
 
 import { View, div } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings, panes, spaces, appHome, home, readTextFile, writeTextFile, pickFolder } from "herdr";
-import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf, argvFor } from "./lib.js";
+import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf, argvFor, step } from "./lib.js";
 import { localRepo, checkoutFor, checkoutsOf, spaceIn, safe } from "./worktree.js";
 
 const POLL = 90000;
@@ -150,6 +150,8 @@ export default class PrInbox extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     cx.timer.after(600, () => this.handle.focus());
+    this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
+    this.keys = []; // the list's items (headers and rows) by key, as last drawn: where a row sits in it
     this.follow(cx);
   }
 
@@ -218,7 +220,7 @@ export default class PrInbox extends View {
     const n = rows.length;
     if (e.key === "escape") return this.dismiss();
     if (e.key === "enter") return cx.spawn(async (cx) => this.launch(cx));
-    if ((e.key === "down" || e.key === "up") && n) this.sel = rows[(rows.indexOf(this.selected()) + (e.key === "down" ? 1 : n - 1)) % n].key;
+    if ((e.key === "down" || e.key === "up") && n) this.scroll.scroll_to_item(this.keys.indexOf((this.sel = step(rows, this.sel, e.key === "down" ? 1 : -1))));
     else return;
     this.loadThreads(cx);
     cx.stop_propagation();
@@ -335,26 +337,30 @@ export default class PrInbox extends View {
         .child(label);
     const chip = (text) => h_flex().h(20).px(8).rounded(5).bg(t.raised).items_center().text_size(11.5).text_color(t.muted).child(text);
 
-    const list = [];
+    // Headers and rows for a virtual list: it places them by the heights given here, and
+    // draws only the visible range, so each item is built when asked (an element built
+    // ahead and handed over later draws nothing).
+    const list = []; // { key, h, draw }
     for (const [sec, label, color] of SECTIONS) {
       const of = rows.filter((r) => r.section === sec);
       if (!of.length) continue;
-      list.push(h_flex().px(10).pt(list.length ? 10 : 4).pb(4).gap(8).items_center().child(div().text_size(10.5).font_semibold().text_color(sec === "review" ? t.blocked : t.dim).child(label.toUpperCase())).child(div().text_size(10.5).font_semibold().text_color(t[color]).child(String(of.length))));
+      const first = !list.length;
+      list.push({ key: `sec-${sec}`, h: first ? 26 : 32, draw: () => h_flex().h(first ? 26 : 32).px(10).pt(first ? 4 : 10).pb(4).gap(8).items_center().child(div().text_size(10.5).font_semibold().text_color(sec === "review" ? t.blocked : t.dim).child(label.toUpperCase())).child(div().text_size(10.5).font_semibold().text_color(t[color]).child(String(of.length))) });
       for (const r of of) {
         const on = r.key === sel?.key;
         const [glyph, ciColor] = CI[r.ci] ?? ["", "dim"];
-        list.push(
-          h_flex().id(`pid-${r.key}`).px(10).py(7).gap(10).items_start().rounded(7).cursor_pointer()
+        list.push({ key: r.key, h: 48, draw: () =>
+          h_flex().id(`pid-${r.key}`).h(48).px(10).py(7).gap(10).items_start().rounded(7).cursor_pointer()
             .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-            .on_click((_e, cx) => { this.sel = r.key; this.loadThreads(cx); cx.notify(); })
             .child(div().size(8).mt(6).flex_none().rounded(4).bg(t[dotOf(r)]))
             .child(v_flex().flex_1().min_w(0)
               .child(div().truncate().text_size(12.5).text_color(t.foreground).child(`#${r.number} ${r.title}`))
               .child(h_flex().gap(6).child(div().truncate().text_size(11).text_color(t.dim).child(sub(r, now))).when(Boolean(glyph), (el) => el.child(div().flex_none().text_size(11).text_color(t[ciColor]).child(`${glyph} CI`))))),
-        );
+        });
       }
     }
 
+    this.keys = list.map((i) => i.key);
     const detail = sel ? this.detail(sel, t, chip, now) : [div().text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…")];
     const th = sel && this.threads[sel.key];
     const primary = sel && this.primaryLabel(sel);
@@ -372,7 +378,12 @@ export default class PrInbox extends View {
         .child(div().flex_1())
         .child(div().text_size(11).text_color(t.dim).child("esc")))
       .child(h_flex().flex_1().min_h(0).items_stretch() // h_flex centers its items: the columns must fill the height
-        .child(v_flex().id("pid-list").w(380).flex_none().p(6).border_r(1).border_color(t.border).overflow_y_scrollbar().children(list.length ? list : [div().p(8).text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…")]))
+        .child(v_flex().id("pid-list").w(380).flex_none().min_h(0).p(6).border_r(1).border_color(t.border)
+          .when(list.length > 0, (el) => el.child(v_flex().flex_1().min_h(0).relative()
+            .child(v_virtual_list("pid-rows", list.length, list.map((i) => i.h), (i) => list[i].key, (range) => list.slice(range.start, range.end).map((i) => i.draw())).track_scroll(this.scroll)
+              .on_item_click((key, cx) => { if (rows.some((r) => r.key === key)) { this.sel = key; this.loadThreads(cx); cx.notify(); } }).size_full())
+            .child(Scrollbar.vertical("pid-rows").absolute().inset_0())))
+          .when(list.length === 0, (el) => el.child(div().p(8).text_color(t.dim).child(st.at ? "Rien en attente." : "Chargement…"))))
         .child(v_flex().flex_1().min_w(0)
           .child(v_flex().id("pid-detail").flex_1().min_h(0).px(20).py(16).gap(14).overflow_y_scrollbar().children(detail))
           .when(Boolean(sel), (el) => el.child(v_flex().px(20).py(12).gap(8).border_t(1).border_color(t.border)
