@@ -205,6 +205,13 @@ export default class PrInbox extends View {
 
   // GitHub forgets the notifications of this PR; the row leaves « Retour » for « En attente »
   // right away (the next poll confirms).
+  // "Marquer lu", from its button or `r`: the error shows under the buttons, the row stays.
+  read(cx) {
+    const r = this.selected();
+    if (!r?.notifs.length) return;
+    cx.spawn(async (cx) => { try { await this.markRead(r); } catch (e) { this.error = String(e.message ?? e); } cx.notify(); });
+  }
+
   async markRead(r) {
     await Promise.all(r.notifs.map((id) => exec("gh", ["api", "-X", "PATCH", `notifications/threads/${id}`])));
     const st = shared(STATE) ?? empty();
@@ -220,6 +227,8 @@ export default class PrInbox extends View {
     const n = rows.length;
     if (e.key === "escape") return this.dismiss();
     if (e.key === "enter") return cx.spawn(async (cx) => this.launch(cx));
+    if (e.key === "o" && n) return this.openGitHub(this.selected());
+    if (e.key === "r") return this.read(cx);
     if ((e.key === "down" || e.key === "up") && n) this.scroll.scroll_to_item(this.keys.indexOf((this.sel = step(rows, this.sel, e.key === "down" ? 1 : -1))));
     else return;
     this.loadThreads(cx);
@@ -390,9 +399,9 @@ export default class PrInbox extends View {
             .child(h_flex().gap(8).items_center()
               .when(Boolean(primary), (x) => x.child(button("pid-go", this.busy ? "lancement…" : primary, true, (cx) => cx.spawn(async (cx) => this.launch(cx)), Boolean(th?.loading) || this.busy)))
               .child(button("pid-gh", "Ouvrir sur GitHub ↗", false, () => this.openGitHub(sel)))
-              .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", false, (cx) => cx.spawn(async (cx) => { try { await this.markRead(sel); } catch (e) { this.error = String(e.message ?? e); } cx.notify(); }))))
+              .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", false, (cx) => this.read(cx))))
               .child(div().flex_1())
-              .child(div().text_size(11).text_color(t.dim).child("↑↓ choisir · ↵ lancer · esc")))
+              .child(div().text_size(11).text_color(t.dim).child("↑↓ choisir · ↵ lancer · o GitHub · r marquer lu · esc")))
             .when(Boolean(this.noteFor(sel)), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.noteFor(sel))))
             .when(Boolean(this.error), (x) => x.child(div().text_size(12).text_color(t.blocked).child(this.error)))))));
   }
