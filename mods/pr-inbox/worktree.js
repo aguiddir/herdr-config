@@ -37,6 +37,9 @@ export async function localRepo(fullName, candidates) {
   return null;
 }
 
+// A worktree folder's name for a branch, as start-work makes it. The dialog's note says it too.
+export const safe = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-");
+
 // Every checked-out branch and its folder.
 export async function checkoutsOf(main) {
   const list = (await git(main, ["worktree", "list", "--porcelain"])).out;
@@ -79,7 +82,7 @@ export async function checkoutFor(repo, row) {
   const has = async (ref) => (await git(main, ["show-ref", "--verify", "--quiet", ref])).ok;
   const local = await has(`refs/heads/${branch}`);
   if (local) await catchUp(main, row, branch, head);
-  path = `${home()}/.herdr/worktrees/${repo.name}/${branch.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
+  path = `${home()}/.herdr/worktrees/${repo.name}/${safe(branch)}`;
   // A local branch is checked out as is. A new one starts from the PR's head, not from
   // origin/<branch>, which may be behind (only pull/N/head was fetched); it then tracks origin's.
   const add = local ? ["worktree", "add", path, branch] : ["worktree", "add", "--no-track", "-b", branch, path, head];

@@ -10,7 +10,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, placement, notify, window, settings, panes, spaces, appHome, home, readTextFile, writeTextFile, pickFolder } from "herdr";
 import { rowsOf, fresh, toastFor, sub, dotOf, ago, ci, SECTIONS, prOf, threads, verdict, reviewPrompt, fixPrompt, branchOf, argvFor } from "./lib.js";
-import { localRepo, checkoutFor, checkoutsOf, spaceIn } from "./worktree.js";
+import { localRepo, checkoutFor, checkoutsOf, spaceIn, safe } from "./worktree.js";
 
 const POLL = 90000;
 const STATE = "pr-inbox.state"; // { at, error, rows }
@@ -21,7 +21,6 @@ const SEARCH = "number,title,repository,updatedAt,isDraft,author,url";
 const VIEW = "number,title,url,headRefName,headRefOid,isCrossRepository,author,isDraft,reviewDecision,reviews,statusCheckRollup,additions,deletions,changedFiles,body";
 const CI = { ok: ["✓", "done"], run: ["◐", "working"], ko: ["✗", "blocked"] };
 const CONFIG = () => `${appHome()}/mods/pr-inbox/config.json`; // { "repos": { "owner/name": "/folder" } }
-const safe = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-"); // a worktree folder's name, as start-work makes it
 const VERDICT_COLOR = { APPROVED: "done", CHANGES_REQUESTED: "blocked" };
 
 async function gh(args) {
@@ -144,7 +143,8 @@ export default class PrInbox extends View {
     setShared(OPEN, true);
     this.sel = null; // the selected row's key (not `key`: that is the key handler): the rows are rewritten by every poll
     this.threads = {}; // key -> { at: updatedAt, threads, loading?, error? }
-    this.where = {}; // key -> { repo, path, open } : where ↵ would go, said before the click
+    this.where = {}; // key -> { at: updatedAt, repo, path, open } : where ↵ would go, said before the click
+    this.repos = {}; // owner/name -> the local repo (or null): found once per dialog, not per row
     this.error = "";
     this.busy = false;
     this.handle = cx.focus_handle();
@@ -238,19 +238,21 @@ export default class PrInbox extends View {
   }
 
   // Finds the repo, the checkout and the space of the selected PR, for the note under the buttons.
+  // Once per update of the PR, and not before its branch is known (gh pr view may still be out).
   locate(cx) {
     const r = this.selected();
-    if (!r || !this.primaryLabel(r) || this.where[r.key]) return;
-    this.where[r.key] = { loading: true };
+    if (!r || !this.primaryLabel(r) || !r.branch || this.where[r.key]?.at === r.updatedAt) return;
+    this.where[r.key] = { at: r.updatedAt, loading: true };
     cx.spawn(async (cx) => {
       try {
-        const repo = await localRepo(r.repo, await this.candidates(r));
+        if (!(r.repo in this.repos)) this.repos[r.repo] = await localRepo(r.repo, await this.candidates(r));
+        const repo = this.repos[r.repo];
         const checkouts = repo ? await checkoutsOf(repo.main) : new Map();
-        const path = (repo && r.branch && checkouts.get(branchOf(r))) ?? null;
+        const path = (repo && checkouts.get(branchOf(r))) ?? null;
         const open = path ? spaceIn(path, checkouts.values(), panes(), spaces()) : null;
-        this.where[r.key] = { repo, path, open };
+        this.where[r.key] = { at: r.updatedAt, repo, path, open };
       } catch (e) {
-        this.where[r.key] = { error: String(e.message ?? e) };
+        this.where[r.key] = { at: r.updatedAt, error: String(e.message ?? e) };
       }
       cx.notify();
     });
@@ -263,7 +265,7 @@ export default class PrInbox extends View {
     // A fork's code is someone else's: Claude starts in it, its .claude settings and hooks included.
     const then = (r.section === "review" ? `lance claude en review de la PR #${r.number}` : `lance claude avec les ${r.remarks} remarques`) + (r.fork ? " — PR d'un fork : Claude démarre dans le code de quelqu'un d'autre, ses hooks compris" : "");
     if (!w.repo) return `↵ demande où est le dépôt ${r.repo} sur cette machine, puis ${then}.`;
-    const b = r.branch ? branchOf(r) : "?";
+    const b = branchOf(r); // known: locate waits for the branch
     if (w.open) return `↵ ouvre l'espace « ${w.open.space.name} » (déjà ouvert sur ${b}), puis ${then}.`;
     if (w.path) return `↵ ouvre un espace sur ${w.path.replace(home(), "~")} (déjà sortie), puis ${then}.`;
     return `↵ crée le worktree ~/.herdr/worktrees/${w.repo.name}/${safe(b)} et un espace dessus, puis ${then}.`;
