@@ -23,14 +23,15 @@ export async function repoOf(folder) {
 }
 
 // The first candidate folder whose repo's origin is that GitHub repo (owner/name).
+// Repos are told apart by their main checkout, never by the candidate folder: a main checkout
+// listed before its worktrees would otherwise be skipped as "seen", and its worktrees with it.
 export async function localRepo(fullName, candidates) {
-  const seen = new Set();
-  for (const folder of candidates) {
-    if (!folder || seen.has(folder)) continue;
-    seen.add(folder);
+  const asked = new Set(); // main checkouts whose origin was read
+  for (const folder of new Set(candidates)) {
+    if (!folder) continue;
     const repo = await repoOf(folder).catch(() => null);
-    if (!repo || seen.has(repo.main)) continue;
-    seen.add(repo.main);
+    if (!repo || asked.has(repo.main)) continue;
+    asked.add(repo.main);
     const origin = await git(repo.main, ["remote", "get-url", "origin"]);
     if (origin.ok && matchOrigin(origin.out, fullName)) return { main: repo.main, name: repo.name };
   }
