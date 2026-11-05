@@ -106,7 +106,9 @@ export default class PrInbox extends View {
     const st = shared(STATE) ?? empty();
     const right = placement()?.edge !== "left";
     const now = Date.now();
+    let total = 0; // a floating block sizes to its content: max_h wouldn't cap it, so the height is set
     const line = (id, h, edge, body) => {
+      total += h;
       const el = h_flex().id(id).h(h).w_full().flex_none().items_center();
       if (right) el.flex_row_reverse();
       return el.child(h_flex().w(52).flex_none().items_center().justify_center().child(edge)).child(v_flex().flex_1().min_w(0).justify_center().pr(right ? 0 : 12).pl(right ? 12 : 0).children(body));
@@ -129,7 +131,7 @@ export default class PrInbox extends View {
     if (!rows.length) rows.push(line("pi-none", 40, div().size(8).rounded(4).border(1.5).border_color(t.dim), [div().text_color(t.muted).child(st.at ? "Rien en attente" : "Chargement…")]));
     const foot = st.error ? div().truncate().text_size(11).text_color(t.blocked).child(st.error) : div().text_size(11).text_color(t.dim).child(st.at ? `mis à jour ${ago(now - st.at)}` : "");
     rows.push(line("pi-foot", 24, div(), [foot]));
-    return v_flex().id("pr-inbox").w(360).max_h(640).overflow_y_scrollbar().text_size(13).children(rows);
+    return v_flex().id("pr-inbox").w(360).h(Math.min(640, total)).overflow_y_scrollbar().text_size(13).children(rows);
   }
 
   // ---- the dialog copy ----
