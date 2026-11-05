@@ -337,13 +337,15 @@ export default class PrInbox extends View {
     const now = Date.now();
     const todo = rows.filter((r) => r.section !== "wait").length;
     const repos = new Set(rows.map((r) => r.repo)).size;
-    const button = (id, label, primary, onClick, disabled = false) =>
-      h_flex().id(id).h(28).px(12).flex_none().items_center().rounded(6).text_size(12.5).cursor_pointer()
+    // Each button carries its key, so the hint line stays short whatever the primary label's length.
+    const button = (id, label, key, primary, onClick, disabled = false) =>
+      h_flex().id(id).h(28).px(12).gap(8).flex_none().items_center().rounded(6).text_size(12.5).cursor_pointer()
         .when(primary && !disabled, (el) => el.bg(t.solid).text_color(t.solid_foreground).font_semibold())
         .when(primary && disabled, (el) => el.bg(t.raised).text_color(t.dim).font_semibold())
         .when(!primary, (el) => el.border(1).border_color(t.input).text_color(t.foreground).hover((s) => s.bg(t.hover)))
         .on_click((_e, cx) => { cx.stop_propagation(); if (!disabled) onClick(cx); })
-        .child(label);
+        .child(label)
+        .child(div().text_size(10.5).font_normal().opacity(0.6).child(key));
     const chip = (text) => h_flex().h(20).px(8).rounded(5).bg(t.raised).items_center().text_size(11.5).text_color(t.muted).child(text);
 
     // Headers and rows for a virtual list: it places them by the heights given here, and
@@ -396,12 +398,12 @@ export default class PrInbox extends View {
         .child(v_flex().flex_1().min_w(0)
           .child(v_flex().id("pid-detail").flex_1().min_h(0).px(20).py(16).gap(14).overflow_y_scrollbar().children(detail))
           .when(Boolean(sel), (el) => el.child(v_flex().px(20).py(12).gap(8).border_t(1).border_color(t.border)
-            .child(h_flex().gap(8).items_center()
-              .when(Boolean(primary), (x) => x.child(button("pid-go", this.busy ? "lancement…" : primary, true, (cx) => cx.spawn(async (cx) => this.launch(cx)), Boolean(th?.loading) || this.busy)))
-              .child(button("pid-gh", "Ouvrir sur GitHub ↗", false, () => this.openGitHub(sel)))
-              .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", false, (cx) => this.read(cx))))
+            .child(h_flex().gap(8).items_center().flex_wrap() // the hint drops to a second line when the primary label is long
+              .when(Boolean(primary), (x) => x.child(button("pid-go", this.busy ? "lancement…" : primary, "↵", true, (cx) => cx.spawn(async (cx) => this.launch(cx)), Boolean(th?.loading) || this.busy)))
+              .child(button("pid-gh", "Ouvrir sur GitHub ↗", "o", false, () => this.openGitHub(sel)))
+              .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", "r", false, (cx) => this.read(cx))))
               .child(div().flex_1())
-              .child(v_flex().flex_none().items_end().text_size(11).text_color(t.dim).child(div().child("↑↓ choisir · ↵ lancer")).child(div().child("o GitHub · r marquer lu · esc"))))
+              .child(div().flex_none().text_size(11).text_color(t.dim).child("↑↓ · esc")))
             .when(Boolean(this.noteFor(sel)), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.noteFor(sel))))
             .when(Boolean(this.error), (x) => x.child(div().text_size(12).text_color(t.blocked).child(this.error)))))));
   }
