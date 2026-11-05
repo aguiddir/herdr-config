@@ -44,17 +44,21 @@ assert.equal(dotOf({ ...rows[1], decision: "CHANGES_REQUESTED" }), "blocked");
 assert.equal(dotOf({ ...rows[2], decision: "APPROVED" }), "done");
 
 const T = "2026-11-03T13:33:00Z";
-assert.deepEqual(fresh(notifs, null), { fresh: [], seen: [`1@${T}`, `2@${T}`, `3@${T}`] });
+assert.deepEqual(fresh(notifs, null), { fresh: [], seen: ["1", `2@${T}`, `3@${T}`] }); // a review request is keyed on its id
 const f = fresh([...notifs, notif("4", "review_requested", 198)], ["1", "2", "3"]);
 assert.deepEqual(f.fresh.map((n) => n.id), ["4"]);
 // A bare id from before (seen was keyed on id alone) still counts as seen, once.
-assert.deepEqual(f.seen, [`1@${T}`, `2@${T}`, `3@${T}`, `4@${T}`]);
+assert.deepEqual(f.seen, ["1", `2@${T}`, `3@${T}`, "4"]);
 assert.deepEqual(fresh([notif("5", "comment", 9, "Issue")], []).fresh, []);
-// GitHub reuses one thread id per PR: a later update of a seen thread is new again.
-const later = { ...notif("1", "review_requested", 203), updated_at: "2026-11-03T15:00:00Z" };
+// GitHub reuses one thread id per PR: a later update of a seen thread is new again…
+const later = { ...notif("2", "author", 187), updated_at: "2026-11-03T15:00:00Z" };
 const f2 = fresh([later], f.seen);
-assert.deepEqual(f2.fresh.map((n) => n.id), ["1"]);
+assert.deepEqual(f2.fresh.map((n) => n.id), ["2"]);
 assert.deepEqual(fresh([later], f2.seen).fresh, []);
+// …except a review request, whose thread keeps that reason while the PR moves (a push, a
+// comment, the merge): the request was made once, it is signalled once.
+const again = { ...notif("1", "review_requested", 203), updated_at: "2026-11-03T15:00:00Z" };
+assert.deepEqual(fresh([again], f2.seen).fresh, []);
 
 assert.deepEqual(toastFor(notifs[0], rows[0]), { title: "yoannwicker te demande une review", body: "renoshield #203 · POSO-112: Builder" });
 assert.deepEqual(toastFor(notifs[1], rows[1]), { title: "yoannwicker a relu #187", body: "renoshield #187 · POSO-103: Checks" });

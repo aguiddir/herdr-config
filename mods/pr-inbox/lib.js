@@ -66,11 +66,13 @@ export function rowsOf({ requested, mine, notifs, details, me }) {
 
 // The notifications never seen before, and the keys to remember. GitHub keeps one thread per
 // PR and makes it unread again with a newer updated_at, so a key is id@updated_at: a second
-// round of reviews is new. A bare id (how seen was kept at first) counts as seen. The first
-// time ever (seen null) nothing is new: no storm of toasts for what was already there.
+// round of reviews is new. Not for a review request: its thread keeps that reason while the PR
+// moves (a push, a comment, the merge), and the request was made once, so its key is the id.
+// A bare id (how seen was kept at first) counts as seen. The first time ever (seen null)
+// nothing is new: no storm of toasts for what was already there.
 // ponytail: seen is capped at 500 keys, current ones last; a thread read on GitHub leaves the list anyway.
 export function fresh(notifs, seen) {
-  const keyOf = (n) => `${n.id}@${n.updated_at}`;
+  const keyOf = (n) => (n.reason === "review_requested" ? n.id : `${n.id}@${n.updated_at}`);
   const keys = notifs.map(keyOf);
   if (seen === null) return { fresh: [], seen: keys };
   const old = new Set(seen);
