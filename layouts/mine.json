@@ -164,6 +164,15 @@
                   ]
                 }
               ]
+            },
+            {
+              "id": "gutter",
+              "type": "column",
+              "size": {
+                "px": 50
+              },
+              "resizable": false,
+              "children": []
             }
           ]
         },
