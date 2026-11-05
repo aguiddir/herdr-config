@@ -95,7 +95,7 @@ Le tiroir interroge GitHub toutes les 90 s. Une notification jamais vue donne un
 
 Le dialogue : la liste à gauche, la PR à droite, avec sa branche, sa CI, ses fichiers, puis chaque review avec son verdict et ses commentaires `fichier:ligne`, en lecture seule. Répondre se fait sur GitHub (« Ouvrir sur GitHub ↗ »). « Marquer lu » marque lues les notifications de la PR.
 
-- `↑↓` choisit, `↵` lance, `esc` ferme ;
+- `↑↓` choisit, `↵` lance, `o` ouvre la PR sur GitHub, `r` la marque lue, `esc` ferme ;
 - **▶ Relire avec Claude**, sur une PR à relire : la branche est sortie dans un worktree (`pull/<n>/head` pour un fork), un espace ouvert dessus, et Claude lancé avec « relis la PR #N avec le skill code-review, prépare la review dans ce terminal, ne poste rien ». La branche est à quelqu'un d'autre, alors Claude démarre en mode restreint (`--setting-sources user --strict-mcp-config`) : le `.claude/` du dépôt (hooks, env, skills, CLAUDE.md) et son `.mcp.json` ne sont pas chargés, seulement ma config à moi. Un worktree hérite de la confiance du checkout principal, rien d'autre ne les arrêterait ;
 - **▶ Traiter les remarques avec Claude**, sur un retour : l'espace déjà ouvert sur la branche est réutilisé, et Claude reçoit les remarques recopiées en entier, avec `superpowers:receiving-code-review` : il vérifie chaque remarque, corrige en commits `--fixup`, et ne répond pas sur GitHub.
 
