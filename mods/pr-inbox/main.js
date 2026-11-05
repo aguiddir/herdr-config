@@ -401,7 +401,7 @@ export default class PrInbox extends View {
               .child(button("pid-gh", "Ouvrir sur GitHub ↗", false, () => this.openGitHub(sel)))
               .when(sel.notifs.length > 0, (x) => x.child(button("pid-read", "Marquer lu", false, (cx) => this.read(cx))))
               .child(div().flex_1())
-              .child(div().text_size(11).text_color(t.dim).child("↑↓ choisir · ↵ lancer · o GitHub · r marquer lu · esc")))
+              .child(v_flex().flex_none().items_end().text_size(11).text_color(t.dim).child(div().child("↑↓ choisir · ↵ lancer")).child(div().child("o GitHub · r marquer lu · esc"))))
             .when(Boolean(this.noteFor(sel)), (x) => x.child(div().text_size(11.5).text_color(t.dim).child(this.noteFor(sel))))
             .when(Boolean(this.error), (x) => x.child(div().text_size(12).text_color(t.blocked).child(this.error)))))));
   }
