@@ -77,9 +77,11 @@ La dernière phrase vient du transcript de la session Claude, sans hook : herdr-
 
 Un tiroir flottant sur le bord droit de la fenêtre (layout `mine`) : replié, 52 px, un compteur par section et un point par PR ; il s'ouvre au survol. `ctrl-shift-g`, ou un clic sur une ligne, ouvre le dialogue.
 
-| Le tiroir, ouvert | Le dialogue |
+| Le tiroir, replié | Le tiroir, ouvert |
 |---|---|
-| ![Tiroir](mods/pr-inbox/preview-drawer.png) | ![Dialogue](mods/pr-inbox/preview.png) |
+| ![Tiroir replié](mods/pr-inbox/preview-folded.png) | ![Tiroir ouvert](mods/pr-inbox/preview-drawer.png) |
+
+![Dialogue](mods/pr-inbox/preview.png)
 
 Trois sections, tous repos confondus :
 
