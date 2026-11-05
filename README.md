@@ -131,7 +131,7 @@ git fetch origin && git checkout -f main
 ./install.sh
 ```
 
-Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR.
+Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. Herdr ne permet pas d'étendre un layout fourni : `mine.json` est une copie de son `main.json` plus deux ajouts, la colonne `gutter` de 50 px dans `work-body` et le bloc `floating`. Quand Herdr change `main.json`, refaire la copie : `diff layouts/main.json layouts/mine.json` ne doit montrer que ces deux ajouts.
 
 ## Installer start-work
 
