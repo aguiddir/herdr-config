@@ -98,8 +98,10 @@ const rp = reviewPrompt(row);
 assert.match(rp, /PR #187 de softwarevidal\/renoshield/);
 assert.match(rp, /« POSO-103: Checks »/);
 assert.match(rp, /feat\/poso-103/);
-assert.match(rp, /code-review/);
-assert.match(rp, /Ne poste rien sur GitHub/);
+assert.match(rp, /`\/code-review high --comment`/);
+assert.match(rp, /gh pr review 187 --repo softwarevidal\/renoshield --comment/);
+assert.match(rp, /--approve/);
+assert.doesNotMatch(rp, /Ne poste rien/);
 // Someone else's branch: its .claude/ (hooks, env, skills, CLAUDE.md) and .mcp.json never load.
 // A worktree inherits the main checkout's trust, so nothing else would stop them.
 assert.match(rp, /CLAUDE\.md/);
