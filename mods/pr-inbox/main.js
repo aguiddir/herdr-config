@@ -299,7 +299,7 @@ export default class PrInbox extends View {
 
   // ↵: the PR's branch checked out (made if needed), a space on it (found if open), Claude
   // started there with the prompt as its first message. The notifications are read: the person
-  // is on it. Claude prepares, the person posts.
+  // is on it. A review, Claude posts (the PR then leaves the drawer); feedback, the person answers.
   async launch(cx) {
     const r = this.selected();
     if (!r || this.busy || !this.primaryLabel(r)) return;
