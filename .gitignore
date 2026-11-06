@@ -6,11 +6,16 @@
 !/install.sh
 !/keys.json
 !/settings.json
+!/layouts/
+/layouts/*
+!/layouts/mine.json
 !/mods/
 /mods/*
 !/mods/start-work/
 !/mods/clean-merged/
 !/mods/cockpit/
+!/mods/pr-inbox/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
+.superpowers/
