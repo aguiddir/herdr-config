@@ -341,7 +341,7 @@ export default class Pipeline extends View {
         .child(v_virtual_list("pipeline-pick", rows.length, 30, (i) => rows[i].id, (range) => rows.slice(range.start, range.end).map((r, i) => row(r, range.start + i))).track_scroll(this.scroll).on_item_click((id, cx) => { this.at = Math.max(0, rows.findIndex((r) => r.id === id)); this.tick(rows[this.at]); cx.notify(); }).size_full())
         .child(Scrollbar.vertical("pipeline-pick").absolute().inset_0())))
       .children((p.notes ?? []).map((line) => div().pt(4).text_size(11).text_color(t.dim).child(line)))
-      .when(p.known === false, (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child("Les branches ou les PR du dépôt n'ont pas pu être lues (git fetch, gh pr list) : impossible de savoir quels tickets sont déjà commencés, aucun agent ne peut être lancé.")))
+      .when(p.known === false, (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child("Les branches ou les PR du dépôt n'ont pas pu être lues (git fetch, gh pr list ; GitHub n'a pas répondu ?) : impossible de savoir quels tickets sont déjà commencés, aucun agent ne peut être lancé. Ferme et rouvre le dialogue pour réessayer.")))
       .children(this.report.map((line) => div().pt(4).text_size(12).text_color(t.blocked).child(line)))
       .child(h_flex().pt(14).gap(12).items_center()
         .child(div().flex_1().text_size(12).text_color(t.dim).child(this.busy ? "lancement des agents…" : n ? `${n} coché${n > 1 ? "s" : ""} : assigné${n > 1 ? "s" : ""} à toi, passé${n > 1 ? "s" : ""} « ${p.from.startStatus} », un Claude en mode auto chacun` : "↑↓ choisir · espace cocher"))

@@ -14,9 +14,13 @@ const FIELDS = "key,summary,status,assignee";
 // { jira: { <repo>: source | [sources] }, branch_formats: { <repo>: "feat/{key}-{slug}" }, jira_start_status, jira_waiting_status }
 const CONFIG = () => `${appHome()}/mods/pipeline/config.json`;
 
-async function git(cwd, args) {
-  const r = await exec("git", args, { cwd });
-  return { ok: r.code === 0, out: (r.stdout ?? "").trim(), err: (r.stderr || r.stdout || "").trim() };
+// exec rejects when the program outlives its timeout (a fetch whose SSH connection hangs):
+// that is a git that failed, not the end of the dialog.
+async function git(cwd, args, timeout) {
+  try {
+    const r = await exec("git", args, { cwd, timeout });
+    return { ok: r.code === 0, out: (r.stdout ?? "").trim(), err: (r.stderr || r.stdout || "").trim() };
+  } catch (e) { return { ok: false, out: "", err: String(e.message ?? e) }; }
 }
 
 async function acli(args) {
@@ -86,7 +90,10 @@ export async function ticketsOf(named) {
 // The repo's branches (newest first, local and origin's) and open PRs. known: both were read;
 // without them nothing says a ticket has no work under way, and no coder is launched.
 export async function workOf(main) {
-  const fetched = await git(main, ["fetch", "--quiet", "origin"]);
+  // A connection to GitHub that hangs is given up early and tried once more: it often passes then.
+  const fetch = () => git(main, ["fetch", "--quiet", "origin"], 15000);
+  let fetched = await fetch();
+  if (!fetched.ok) fetched = await fetch();
   const refs = await git(main, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"]);
   const branches = [...new Set(refs.out.split("\n").filter((b) => b && b !== "origin" && b !== "origin/HEAD").map((b) => b.replace(/^origin\//, "")))];
   const r = await exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName,title"], { cwd: main });
