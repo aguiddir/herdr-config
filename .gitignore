@@ -9,6 +9,7 @@
 !/layouts/
 /layouts/*
 !/layouts/mine.json
+!/hc-templates/
 !/mods/
 /mods/*
 !/mods/start-work/
