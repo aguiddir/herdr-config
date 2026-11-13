@@ -107,6 +107,10 @@ assert.match(ct, /## Hypothèses et questions/);
 assert.match(ct, /pipeline\.stage=ready pipeline\.questions=/);
 assert.match(ct, /« En attente »/);
 assert.match(ct, /Ne merge jamais/);
+// The pull request stays a draft: the developer marks it ready and pings people. No deployment either.
+assert.match(ct, /gh pr create --draft/);
+assert.match(ct, /Elle reste en brouillon/);
+assert.match(ct, /Ne déclenche aucun déploiement/);
 // The repo's commit conventions come first, and the coder stays until the CI has answered.
 assert.match(ct, /conventions de commit de ce dépôt/);
 assert.match(ct, /pipeline\.stage=ci/);

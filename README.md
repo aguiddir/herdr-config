@@ -132,7 +132,7 @@ Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. He
 
 **Suivre** : les tickets lancés, et où en est chacun. Là le dialogue ne pilote rien : il lit ce que herdr-core sait des terminaux, toutes les 5 s tant qu'il est ouvert.
 
-Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans son premier message : lire le ticket, coder en suivant les conventions de commit du dépôt, faire relire, corriger (deux passes au plus), ouvrir la PR, attendre sa CI et la corriger si elle casse par sa faute (deux fois au plus), commenter le ticket. Il lance lui-même le **relecteur** avec herdr-core (`hc run reviewer …`, le rôle de `hc-templates/reviewer.md`) : un autre Claude, au contexte neuf, dans son propre terminal, qui relit avec `/review high`. Le relecteur écrit son rapport dans `.pipeline-review.md`, que le codeur lit puis supprime : le mode auto de Claude refuse qu'un agent écrive dans le terminal d'un autre.
+Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans son premier message : lire le ticket, coder en suivant les conventions de commit du dépôt, faire relire, corriger (deux passes au plus), ouvrir la PR en brouillon (c'est moi qui la passe « ready for review »), attendre sa CI et la corriger si elle casse par sa faute (deux fois au plus), commenter le ticket. Il lance lui-même le **relecteur** avec herdr-core (`hc run reviewer …`, le rôle de `hc-templates/reviewer.md`) : un autre Claude, au contexte neuf, dans son propre terminal, qui relit avec `/review high`. Le relecteur écrit son rapport dans `.pipeline-review.md`, que le codeur lit puis supprime : le mode auto de Claude refuse qu'un agent écrive dans le terminal d'un autre.
 
 À gauche, un ticket par ligne, avec deux cases (code, review) et son état :
 
@@ -147,7 +147,7 @@ Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans so
 - sur un ticket en `question`, `↵` dit au codeur que l'auteur a répondu sur le ticket, `o` ouvre son terminal ;
 - un ticket quitte la liste quand il n'y a plus de terminal dans son worktree (son espace est fermé).
 
-Les agents ne demandent rien en route : ils tournent en `--permission-mode auto`, prennent l'hypothèse la plus raisonnable et la notent dans la PR. Ils ne mergent pas et ne poussent que sur la branche du ticket ; c'est leur consigne qui le dit, et la protection de la branche principale sur GitHub qui le garantit. Seulement les agents de cette machine.
+Les agents ne demandent rien en route : ils tournent en `--permission-mode auto`, prennent l'hypothèse la plus raisonnable et la notent dans la PR. Ils ne mergent pas, ne poussent que sur la branche du ticket et ne déclenchent aucun déploiement ; c'est leur consigne qui le dit, et la protection de la branche principale sur GitHub qui le garantit. Seulement les agents de cette machine.
 
 ## Installer start-work
 
