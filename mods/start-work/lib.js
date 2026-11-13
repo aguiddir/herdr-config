@@ -73,3 +73,10 @@ export function spaceIn(path, checkouts, panes, spaces) {
 export function sourceLabel(source) {
   return source.kind === "project" ? source.key : source.kind === "filter" ? `filtre ${source.id}` : source.jql;
 }
+
+// How Claude starts on a checkout. A PR's branch is someone else's work: opened like VS Code's
+// restricted mode, without the repo's .claude/ (settings, hooks, env, allow rules, skills,
+// CLAUDE.md) and .mcp.json, only the person's own config. A worktree inherits the main
+// checkout's trust, so Claude Code would otherwise run them without asking.
+// ponytail: every PR counts as someone else's; compare `who` to `gh api user` to spare mine.
+export const argvFor = (item) => (item.kind === "pr" ? ["claude", "--setting-sources", "user", "--strict-mcp-config"] : ["claude"]);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # What the mods here need on this machine: gh for start-work, clean-merged and pr-inbox,
-# acli for start-work. Installs acli (no sudo), logs gh and
-# acli in when they aren't, and checks each mod. Safe to re-run.
+# acli for start-work, herdr-core's reviewer role for the pipeline. Installs acli (no sudo),
+# logs gh and acli in when they aren't, copies the roles, and checks each mod. Safe to re-run.
 set -euo pipefail
 home=$(cd "$(dirname "$0")" && pwd)
 ok() { printf '  \033[32m✓\033[0m %s\n' "$1"; }
@@ -43,6 +43,26 @@ if command -v acli >/dev/null; then
   else
     acli jira auth login --web && ok "acli connecté à Jira" || ko "acli n'est pas connecté : acli jira auth login --web"
   fi
+fi
+
+# herdr-core roles (hc run <name> "<task>"): the reviewer the pipeline's coder starts.
+# A role edited by hand is left alone and said, never overwritten.
+echo "herdr-core"
+if command -v hc >/dev/null; then
+  mkdir -p "$HOME/.config/herdr-core/templates"
+  for role in "$home"/hc-templates/*.md; do
+    name=$(basename "$role" .md)
+    there="$HOME/.config/herdr-core/templates/$name.md"
+    if [ ! -e "$there" ]; then
+      cp "$role" "$there" && ok "rôle $name installé"
+    elif cmp -s "$role" "$there"; then
+      ok "rôle $name"
+    else
+      ko "rôle $name : $there diffère de $role (diff \"$there\" \"$role\", puis recopie-le si la différence n'est pas voulue)"
+    fi
+  done
+else
+  ko "hc manque (herdr-core) : https://herdr.dev"
 fi
 
 echo "Mods"
