@@ -6,8 +6,8 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, panes, notify } from "herdr";
-import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn, argvFor } from "./lib.js";
+import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, panes, notify, shared, setShared } from "herdr";
+import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn, argvFor, coderArgv, coderTask, launchPlan } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -34,6 +34,7 @@ async function acli(args) {
 const FIELDS = "key,summary,status,assignee";
 const TABS = ["jira", "issue", "pr"];
 const bare = (title) => title.replace(/^[\p{Extended_Pictographic}️\s]+/u, ""); // gitmoji: no glyph in the UI font
+const PIPELINE = "pipeline.tickets"; // the tickets given a coder, for the pipeline mod: { key, title, repo, branch, path, at } by key
 const CONFIG = () => `${appHome()}/mods/start-work/config.json`;
 
 const ticket = (i, me) => ({
@@ -57,6 +58,8 @@ export default class StartWork extends View {
     this.notes = { jira: [], issue: [], pr: [] }; // why a source is missing
     this.src = "jira"; // the tab shown: one of TABS
     this.assign = true;
+    this.checked = new Set(); // ticked Jira rows, by id: each gets an agent
+    this.report = []; // why a ticked ticket got none
     this.busy = false;
     this.error = "";
     this.branchOf = null; // the row the branch field was filled from
@@ -90,6 +93,14 @@ export default class StartWork extends View {
         app.startWorkTabKeys = true;
       } catch (e) { notify({ title: "start-work : tab ne changera pas d'onglet dans la recherche", body: String(e.message ?? e), level: "warning" }); }
     }
+    // ctrl-space ticks the chosen row, from the search field too. Its own flag: the one above
+    // is already set in an app that loaded the mod before this binding existed.
+    if (!app.startWorkTickKey) {
+      try {
+        for (const context of ["StartWork", "StartWorkSearch > Input"]) cx.bind_keys([{ keystroke: "ctrl-space", action: "sw_tick", context }]);
+        app.startWorkTickKey = true;
+      } catch (e) { notify({ title: "start-work : ctrl-espace ne cochera pas", body: String(e.message ?? e), level: "warning" }); }
+    }
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
     cx.spawn(async (cx) => this.load(cx));
   }
@@ -101,6 +112,7 @@ export default class StartWork extends View {
     if (!this.repo) return;
     const config = JSON.parse((await readTextFile(CONFIG())) ?? "{}");
     this.startStatus = config.jira_start_status ?? "En cours";
+    this.waitingStatus = config.jira_waiting_status ?? "En attente"; // where a coder puts a ticket it has to ask about
     this.format = config.branch_formats?.[this.repo.name];
     const named = config.jira?.[this.repo.name]; // as the person gave them
     this.named = named == null ? [] : [].concat(named);
@@ -309,7 +321,40 @@ export default class StartWork extends View {
     closeOverlay(props().overlay);
   }
 
-  go(cx) {
+  // Tick or untick a Jira row: ticked tickets each get an agent (launch).
+  tick(r) {
+    if (r?.kind !== "jira") return;
+    if (!this.checked.delete(r.id)) this.checked.add(r.id);
+    this.report = [];
+  }
+
+  // Every ticked ticket gets its own worktree, space and coder, which goes to the pull request
+  // alone (lib.js: coderTask). A ticket with work under way gets none: its branch may be
+  // someone else's, and a coder asks nothing. One that fails doesn't stop the others; the
+  // dialog stays open on what didn't start.
+  launch(cx) {
+    if (this.busy || !this.ready) return;
+    const known = [...this.tickets, ...Object.values(this.found).filter((f) => !this.tickets.some((t) => t.id === f.id))];
+    const { launch, skipped } = launchPlan(known, this.checked, (r) => Boolean(existingWork(r, this.branches, this.prs)));
+    this.busy = true;
+    this.error = "";
+    this.report = skipped.map((r) => `${r.key} : déjà commencé (une branche existe), pas d'agent lancé.`);
+    cx.notify();
+    cx.spawn(async (cx) => {
+      for (const r of launch) {
+        try { await this.create(r, branchFor(r, this.format), true); this.checked.delete(r.id); }
+        catch (e) { this.report.push(`${r.key} : ${String(e.message ?? e)}`); }
+      }
+      for (const r of skipped) this.checked.delete(r.id);
+      this.busy = false;
+      if (!this.report.length) return this.close();
+      cx.notify();
+    });
+  }
+
+  // ↵: with ticks, launch their agents; else (or plain: "Créer sans agent") open the chosen row as before.
+  go(cx, plain = false) {
+    if (this.checked.size && !plain) return this.launch(cx);
     const s = this.selected();
     if (this.busy || !this.ready || !s) return;
     this.busy = true;
@@ -323,10 +368,12 @@ export default class StartWork extends View {
     });
   }
 
-  async create(s, branch) {
+  // agent: the space opens on a coder with its task, and the ticket is kept for the pipeline mod.
+  async create(s, branch, agent = false) {
     if (!(await git(this.repo.main, ["check-ref-format", "--branch", branch])).ok) throw new Error(`« ${branch} » n'est pas un nom de branche valide.`);
     // Take the ticket first: if Jira refuses, nothing is half made.
-    if (s.kind === "jira" && !s.mine && this.assign) await this.take(s);
+    // An agent's ticket is always taken: the assignment is what keeps a colleague's agent off it.
+    if (s.kind === "jira" && !s.mine && (this.assign || agent)) await this.take(s);
     await git(this.repo.main, ["worktree", "prune"]); // forget worktrees whose folder was deleted by hand
     let path = await this.checkoutOf(branch);
     const head = s.kind === "pr" ? await this.prHead(s) : null;
@@ -349,6 +396,11 @@ export default class StartWork extends View {
       }
       const r = await git(this.repo.main, add);
       if (!r.ok) throw new Error(r.err || "git worktree add a échoué.");
+    }
+    if (agent) {
+      // launch() only sends tickets with no work under way: there is no space to reuse.
+      setShared(PIPELINE, { ...(shared(PIPELINE) ?? {}), [s.key]: { key: s.key, title: s.title, repo: this.repo.name, branch, path, at: new Date().toISOString() } });
+      return run("space.new", { folder: path, tab: "claude", argv: coderArgv(), task: coderTask(s, { branch, waitingStatus: this.waitingStatus }) });
     }
     const open = spaceIn(path, (await this.checkoutsOf()).values(), panes(), spaces());
     if (open) { run("space.select", { id: open.space.id }); return open.tab && run("tab.select", { id: open.tab }); }
@@ -443,6 +495,11 @@ export default class StartWork extends View {
         .rounded(6)
         .cursor_pointer()
         .when(on, (el) => el.bg(t.selected))
+        .when(r.kind === "jira", (el) => {
+          const ticked = this.checked.has(r.id);
+          return el.child(h_flex().id(`sw-tick-${r.id}`).size(15).flex_none().rounded(4).border(1).border_color(ticked ? t.accent : t.input).when(ticked, (b) => b.bg(t.accent)).items_center().justify_center().text_size(10).text_color(t.accent_foreground)
+            .on_click((_e, cx) => { cx.stop_propagation(); this.tick(r); cx.notify(); }).child(ticked ? "✓" : ""));
+        })
         .child(div().w(80).flex_none().truncate().text_color(tagColor).child(tag))
         .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(r.title))
         .when(Boolean(right), (el) => el.child(div().flex_none().text_size(11).text_color(rightColor).child(right)));
@@ -465,6 +522,8 @@ export default class StartWork extends View {
         .child(div().text_size(11).text_color(t.dim).child(String(counts[src].length)));
     };
     const takes = sel?.kind === "jira" && !sel.mine;
+    const ticks = this.checked.size;
+    const running = Object.keys(shared(PIPELINE) ?? {}).length; // the pipeline mod forgets the ones whose terminals are gone
     const typed = this.branch.value().trim();
     const old = this.branches.includes(typed); // Créer then resumes that branch
     const pr = old && this.pulls.find((p) => branchFor(p) === typed); // a fork's is pr/<n>-<branch>, not its head's name
@@ -481,6 +540,7 @@ export default class StartWork extends View {
       .key_context("StartWork")
       .on_action("sw_next_tab", (_e, cx) => { this.cycle(1); cx.notify(); })
       .on_action("sw_prev_tab", (_e, cx) => { this.cycle(-1); cx.notify(); })
+      .on_action("sw_tick", (_e, cx) => { this.tick(this.selected()); cx.notify(); })
       .on_key_down((e, cx) => this.key(e, cx))
       .size_full()
       .p(16)
@@ -517,14 +577,16 @@ export default class StartWork extends View {
           .when(old, (l) => l.child(div().pl(72).text_size(11).text_color(t.ansi3).child(`Branche existante${pr ? ` · PR #${pr.number} ouverte` : ""} : ${resume}`)))
           .when(takes, (l) => l.child(this.toggle(t, "sw-take", this.assign, `M'assigner ${sel.key}${sel.todo ? " et le passer en cours" : ""}`, () => (this.assign = !this.assign)))),
       )
+      .children(this.report.map((line) => div().text_size(12).text_color(t.blocked).child(line)))
       .when(Boolean(this.error), (el) => el.child(div().text_color(t.blocked).child(this.error)))
       .child(
         h_flex()
           .gap(10)
           .items_center()
-          .child(div().flex_1().text_size(11).text_color(t.dim).child(this.busy ? "création…" : !this.ready && this.repo ? "chargement des branches…" : "↑↓ choisir · tab onglet suivant · ↵ créer · esc fermer"))
+          .child(div().flex_1().text_size(11).text_color(t.dim).child(this.busy ? (ticks ? "lancement des agents…" : "création…") : !this.ready && this.repo ? "chargement des branches…" : ticks ? `${ticks} coché${ticks > 1 ? "s" : ""} : assigné${ticks > 1 ? "s" : ""} à toi et passé${ticks > 1 ? "s" : ""} « ${this.startStatus} »${running ? ` · ${running} agent${running > 1 ? "s" : ""} déjà lancé${running > 1 ? "s" : ""}` : ""}` : "↑↓ choisir · ctrl-espace cocher · tab onglet suivant · ↵ créer · esc fermer"))
           .child(h_flex().id("sw-cancel").h(30).px(14).items_center().rounded(6).border(1).border_color(t.input).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.close()).child("Annuler"))
-          .child(h_flex().id("sw-go").h(30).px(14).items_center().rounded(6).bg(!sel || this.busy || !this.ready ? t.raised : t.solid).text_color(!sel || this.busy || !this.ready ? t.dim : t.solid_foreground).font_semibold().cursor_pointer().on_click((_e, cx) => this.go(cx)).child(old ? "Reprendre ↵" : "Créer ↵")),
+          .when(ticks > 0, (el) => el.child(h_flex().id("sw-plain").h(30).px(14).items_center().rounded(6).border(1).border_color(t.input).text_color(sel ? t.foreground : t.dim).cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.go(cx, true)).child(old ? "Reprendre sans agent" : "Créer sans agent")))
+          .child(h_flex().id("sw-go").h(30).px(14).items_center().rounded(6).bg((!sel && !ticks) || this.busy || !this.ready ? t.raised : t.solid).text_color((!sel && !ticks) || this.busy || !this.ready ? t.dim : t.solid_foreground).font_semibold().cursor_pointer().on_click((_e, cx) => this.go(cx)).child(ticks ? `Lancer ${ticks} agent${ticks > 1 ? "s" : ""} ↵` : old ? "Reprendre ↵" : "Créer ↵")),
       );
   }
 }
