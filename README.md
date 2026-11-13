@@ -11,7 +11,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
 | `mods/pr-inbox/` | les PR GitHub qui m'attendent : un tiroir sur le bord droit, un toast quand une review tombe, et un Claude lancé sur la PR (`ctrl-shift-g`) |
 | `layouts/mine.json` | mon layout : `main` plus le tiroir des PR |
-| `mods/pipeline/` | où en sont les agents lancés sur des tickets : codeur, relecteur, PR (`ctrl-shift-a`) |
+| `mods/pipeline/` | lancer des agents sur des tickets Jira et voir où ils en sont : codeur, relecteur, PR (`ctrl-shift-a`) |
 | `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
 
 ## start-work
@@ -26,8 +26,6 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 - l'onglet **Issues** liste les issues ouvertes du repo ;
 - l'onglet **PR** liste les PR ouvertes : choisir une PR ouvre un worktree sur sa branche, pour la relire ou la modifier (celle d'un fork est récupérée par `pull/<n>/head`) ;
 - `tab` passe à l'onglet suivant, `shift-tab` au précédent. Taper `#12` ouvre Issues (sauf depuis PR), une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
-
-**Lancer des agents** : dans l'onglet Jira, chaque ticket a une case (clic, ou `ctrl-espace` sur la ligne choisie). Avec au moins une case cochée, `↵` devient « Lancer N agents » : chaque ticket coché m'est assigné, passe « En cours », reçoit son worktree et son espace, et un Claude y démarre en `--permission-mode auto` avec la marche à suivre jusqu'à la PR (voir [pipeline](#pipeline)). Un ticket qui a déjà une branche ou une PR n'a pas d'agent : il est nommé, et se reprend à la main. Un ticket qui échoue n'arrête pas les autres. « Créer sans agent » garde le comportement de toujours sur la ligne choisie. Le statut où un agent range un ticket sur lequel il doit poser une question se règle par `jira_waiting_status` dans `config.json` (« En attente » par défaut).
 
 **Créer** fait un worktree dans `~/.herdr/worktrees/<repo>/<branche>`, à partir de `origin/HEAD`. Il ouvre dessus un espace avec Claude. Pour un ticket Jira qui n'est pas à moi, la case « M'assigner » (cochée par défaut) me l'assigne, et le passe « En cours » s'il était encore à faire.
 
@@ -128,7 +126,11 @@ Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. He
 
 ## pipeline
 
-`ctrl-shift-a` : les tickets sur lesquels `start-work` a lancé un agent, et où en est chacun. Le dialogue ne pilote rien : il lit ce que herdr-core sait des terminaux, toutes les 5 s tant qu'il est ouvert.
+`ctrl-shift-a` : des agents qui prennent des tickets Jira et vont seuls jusqu'à la PR. C'est à part de [start-work](#start-work), qui reste l'outil du travail fait à la main avec un agent et n'en sait rien.
+
+**Lancer** (`n`) : la liste des tickets ouverts du dépôt du terminal actif, ceux des sources déclarées dans l'onglet Jira de `start-work` (`mods/start-work/config.json`, lu seulement). `espace` ou un clic coche un ticket, `↵` lance : chaque ticket coché m'est assigné, passe « En cours », reçoit un worktree sur une branche neuve, un espace, et un Claude en `--permission-mode auto` avec la marche à suivre jusqu'à la PR. Un ticket qui a déjà une branche ou une PR, ou qui est pris par quelqu'un d'autre, ne se coche pas : il se fait à la main. La branche et l'assignation sont revérifiées au lancement ; un ticket qui échoue n'arrête pas les autres. Le statut où un agent range un ticket sur lequel il doit poser une question se règle par `jira_waiting_status` dans ce `config.json` (« En attente » par défaut).
+
+**Suivre** : les tickets lancés, et où en est chacun. Là le dialogue ne pilote rien : il lit ce que herdr-core sait des terminaux, toutes les 5 s tant qu'il est ouvert.
 
 Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans son premier message : lire le ticket, coder, faire relire, corriger (deux passes au plus), ouvrir la PR, commenter le ticket. Il lance lui-même le **relecteur** avec herdr-core (`hc run reviewer …`, le rôle de `hc-templates/reviewer.md`) : un autre Claude, au contexte neuf, dans son propre terminal. Le relecteur écrit son rapport dans `.pipeline-review.md`, que le codeur lit puis supprime : le mode auto de Claude refuse qu'un agent écrive dans le terminal d'un autre.
 
