@@ -7,7 +7,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, focused, exec, home, appHome, readTextFile, writeTextFile, spaces, panes, notify } from "herdr";
-import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn } from "./lib.js";
+import { branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn, argvFor } from "./lib.js";
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -353,7 +353,7 @@ export default class StartWork extends View {
     const open = spaceIn(path, (await this.checkoutsOf()).values(), panes(), spaces());
     if (open) { run("space.select", { id: open.space.id }); return open.tab && run("tab.select", { id: open.tab }); }
     // Unnamed, so the space follows the checkout folder and nests under its repo.
-    run("space.new", { folder: path, tab: "claude", argv: ["claude"] });
+    run("space.new", { folder: path, tab: "claude", argv: argvFor(s) });
   }
 
   // The PR's head commit as GitHub has it now: pull/N/head holds it for a fork's PR too.
