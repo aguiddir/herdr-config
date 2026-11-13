@@ -129,13 +129,16 @@ export default class StartWork extends View {
 
   // What already exists, so a ticket with work under way is resumed, not started over.
   async loadWork() {
-    await git(this.repo.main, ["fetch", "--quiet", "origin"]);
+    // Without both answers nothing says a ticket has no work under way: no agent is launched then.
+    this.workKnown = false;
+    const fetched = await git(this.repo.main, ["fetch", "--quiet", "origin"]);
     this.checkouts = await this.checkoutsOf();
     const refs = await git(this.repo.main, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"]);
     this.branches = [...new Set(refs.out.split("\n").filter((b) => b && b !== "origin" && b !== "origin/HEAD").map((b) => b.replace(/^origin\//, "")))];
     const r = await exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,title,url,author,isDraft,isCrossRepository"], { cwd: this.repo.main });
     if (r.code !== 0) return this.notes.pr.push(`GitHub : ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
     this.prs = JSON.parse(r.stdout);
+    this.workKnown = fetched.ok;
     this.pulls = this.prs.map((p) => ({ kind: "pr", id: `pr-${p.number}`, number: p.number, branch: p.headRefName, title: bare(p.title), who: p.author?.login ?? "", draft: p.isDraft, fork: p.isCrossRepository }));
   }
 
@@ -334,6 +337,7 @@ export default class StartWork extends View {
   // dialog stays open on what didn't start.
   launch(cx) {
     if (this.busy || !this.ready) return;
+    if (!this.workKnown) return void (this.report = ["Les branches ou les PR du dépôt n'ont pas pu être lues (git fetch, gh pr list) : impossible de savoir quels tickets sont déjà commencés, aucun agent lancé."]);
     const known = [...this.tickets, ...Object.values(this.found).filter((f) => !this.tickets.some((t) => t.id === f.id))];
     const { launch, skipped } = launchPlan(known, this.checked, (r) => Boolean(existingWork(r, this.branches, this.prs)));
     this.busy = true;
@@ -371,11 +375,19 @@ export default class StartWork extends View {
   // agent: the space opens on a coder with its task, and the ticket is kept for the pipeline mod.
   async create(s, branch, agent = false) {
     if (!(await git(this.repo.main, ["check-ref-format", "--branch", branch])).ok) throw new Error(`« ${branch} » n'est pas un nom de branche valide.`);
-    // Take the ticket first: if Jira refuses, nothing is half made.
-    // An agent's ticket is always taken: the assignment is what keeps a colleague's agent off it.
-    if (s.kind === "jira" && !s.mine && (this.assign || agent)) await this.take(s);
     await git(this.repo.main, ["worktree", "prune"]); // forget worktrees whose folder was deleted by hand
     let path = await this.checkoutOf(branch);
+    if (agent) {
+      // Asked again now, not as the dialog saw it when it opened: a coder asks nothing, so it
+      // only ever starts on a branch made for it here, on a ticket nobody else has taken.
+      const has = async (ref) => (await git(this.repo.main, ["show-ref", "--verify", "--quiet", ref])).ok;
+      if (path || (await has(`refs/heads/${branch}`)) || (await has(`refs/remotes/origin/${branch}`))) throw new Error(`la branche ${branch} existe déjà, pas d'agent lancé.`);
+      const now = ticket(JSON.parse(await acli(["workitem", "view", s.key, "--fields", FIELDS, "--json"])), this.me);
+      if (now.who && !now.mine) throw new Error(`déjà pris par ${now.who}, pas d'agent lancé.`);
+      // The assignment is what keeps a colleague's agent off the ticket: always taken, and a
+      // ticket already mine but still to do is moved to "en cours" too.
+      if (!s.mine || s.todo) await this.take(s);
+    } else if (s.kind === "jira" && !s.mine && this.assign) await this.take(s); // take the ticket first: if Jira refuses, nothing is half made
     const head = s.kind === "pr" ? await this.prHead(s) : null;
     // Checked out already, maybe with work in progress: say it is behind, don't move it.
     const behind = head && path && (await git(this.repo.main, ["rev-list", "--count", `${branch}..${head}`])).out;
