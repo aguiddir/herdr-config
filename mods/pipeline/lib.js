@@ -121,7 +121,24 @@ export function ticketQueries(source, filterJql) {
   return [`(${base}) AND ${open}`];
 }
 
-export const sourceLabel = (source) => (source.kind === "project" ? source.key : source.kind === "filter" ? `filtre ${source.id}` : source.jql);
+// Jira's "Thématique" dropdown (DAEL…). By id: several custom fields of the site bear that name,
+// so JQL refuses it. ponytail: this site's id; a config key when another Jira needs the mod.
+const THEME = "cf[10040]";
+
+// One source from the three fields of the dialog: where (a link, a project key or JQL, maybe
+// empty), a label, a thématique. Without the last two it is the first, as typed (a project then
+// keeps its open sprint). "" when the link can't be read.
+export function compose(where, label, theme) {
+  const quoted = (v) => `"${v.trim().replace(/["\\]/g, "")}"`;
+  const extra = [label.trim() && `labels = ${quoted(label)}`, theme.trim() && `${THEME} = ${quoted(theme)}`].filter(Boolean);
+  if (!extra.length) return where.trim();
+  const s = where.trim() ? ticketSource(where) : null;
+  if (where.trim() && !s) return "";
+  const base = !s ? [] : [s.kind === "filter" ? `filter = ${s.id}` : s.kind === "project" ? `project = "${s.key}"` : `(${s.jql})`];
+  return [...base, ...extra].join(" AND ");
+}
+
+export const sourceLabel = (source) => (source.kind === "project" ? source.key : source.kind === "filter" ? `filtre ${source.id}` : source.jql.replace(THEME, "thématique"));
 
 // Control characters and line breaks to one space: a title is one line of a prompt.
 export const flat = (s) => String(s ?? "").replace(/[\r\n\t\p{Cc}]+/gu, " ").replace(/ {2,}/g, " ").trim();

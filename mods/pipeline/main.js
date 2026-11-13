@@ -12,7 +12,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, focused, home } from "herdr";
-import { rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel } from "./lib.js";
+import { rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose } from "./lib.js";
 import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, start } from "./launch.js";
 
 const EVERY = 5000;
@@ -48,8 +48,11 @@ export default class Pipeline extends View {
     this.loaded = false;
     this.error = "";
     this.view = "rows"; // or "pick": choosing the tickets to launch
-    this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10570 · labels = DATADELTA" });
-    this.sourceInput.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
+    // A source is typed in three fields, and kept as one line (lib.js: compose).
+    this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10570 · POSO" });
+    this.labelInput = InputState.new({ placeholder: "DATADELTA" });
+    this.themeInput = InputState.new({ placeholder: "DAEL" });
+    for (const input of [this.sourceInput, this.labelInput, this.themeInput]) input.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
     this.adding = false; // the source field is shown
     this.editing = null; // the source being edited, by index; null: a new one
     this.sourceError = "";
@@ -166,7 +169,7 @@ export default class Pipeline extends View {
   }
 
   async submitSource(cx) {
-    const text = this.sourceInput.value().trim();
+    const text = compose(this.sourceInput.value(), this.labelInput.value(), this.themeInput.value());
     if (!ticketSource(text)) {
       this.sourceError = "acli ne lit pas les tickets d'un board qui n'appartient pas à un projet. Colle le lien de son filtre : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre, puis copie l'adresse (…/issues/?filter=…).";
       return cx.notify();
@@ -183,7 +186,9 @@ export default class Pipeline extends View {
     this.editing = index ?? null;
     this.adding = true;
     this.sourceError = "";
-    this.sourceInput.set_value(index === undefined ? "" : this.pick.from.named[index]);
+    this.sourceInput.set_value(index === undefined ? "" : this.pick.from.named[index]); // a kept one comes back whole, here
+    this.labelInput.set_value("");
+    this.themeInput.set_value("");
     this.sourceInput.focus();
   }
 
@@ -293,9 +298,11 @@ export default class Pipeline extends View {
         .children(named.map(chip))
         .when(!this.adding, (r) => r.child(div().id("pp-src-add").cursor_pointer().text_color(t.accent).on_click((_e, cx) => { cx.stop_propagation(); this.openSourceInput(); cx.notify(); }).child("+ ajouter")))))
       .when(this.adding, (c) => c
-        .when(!named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${p.from.repo.name} à confier à des agents ? Colle le lien d'un board de projet ou d'un filtre Jira, une clé de projet, ou du JQL (labels = MONLABEL). C'est gardé dans mods/pipeline/config.json.`)))
-        .child(h_flex().gap(8).items_center()
-          .child(field(this.sourceInput).flex_1())
+        .when(!named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${p.from.repo.name} à confier à des agents ? Le lien d'un board de projet ou d'un filtre Jira (ou une clé de projet, ou du JQL), et de quoi le restreindre : un label, une thématique. Un seul des trois suffit. C'est gardé dans mods/pipeline/config.json.`)))
+        .child(h_flex().gap(8).items_end()
+          .child(v_flex().flex_1().gap(3).child(div().text_size(11).text_color(t.dim).child("Lien Jira")).child(field(this.sourceInput)))
+          .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Label")).child(field(this.labelInput)))
+          .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Thématique")).child(field(this.themeInput)))
           .when(named.length > 0, (x) => x.child(div().id("pp-src-cancel").cursor_pointer().text_color(t.dim).on_click((_e, cx) => { cx.stop_propagation(); this.closeSourceInput(); cx.notify(); }).child("annuler"))))
         .when(Boolean(this.sourceError), (x) => x.child(div().text_color(t.blocked).child(this.sourceError))));
     return v_flex()

@@ -1,6 +1,6 @@
 // node mods/pipeline/lib.test.mjs
 import assert from "node:assert/strict";
-import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, coderArgv, coderTask, flat } from "./lib.js";
+import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, coderArgv, coderTask, flat } from "./lib.js";
 
 const T = (address, cwd, status, labels = {}, parent = null) => ({ address, cwd, status, labels, parent, name: null });
 const tickets = {
@@ -64,6 +64,16 @@ assert.equal(whyNot({ key: "A-1", mine: false, who: null }, ["feat/a-1-x"], []),
 assert.equal(whyNot({ key: "A-1", mine: false, who: null }, ["feat/a-12-x", "backup/a-1"], []), ""); // A-12 is not A-1
 assert.deepEqual(ticketSource("https://x.atlassian.net/issues/?filter=10570"), { kind: "filter", id: "10570" });
 assert.deepEqual(ticketQueries({ kind: "jql", jql: "labels = X ORDER BY rank" }), ["(labels = X) AND statusCategory != Done ORDER BY updated DESC"]);
+// The dialog's three fields make one source.
+const link = "https://x.atlassian.net/issues/?filter=10570";
+assert.equal(compose(` ${link} `, "", " "), link); // alone, as typed
+assert.equal(compose(link, "", "DAEL"), 'filter = 10570 AND cf[10040] = "DAEL"');
+assert.equal(compose("POSO", "back", "DAEL"), 'project = "POSO" AND labels = "back" AND cf[10040] = "DAEL"');
+assert.equal(compose("status = Open OR status = New", "x", ""), '(status = Open OR status = New) AND labels = "x"');
+assert.equal(compose("", "", 'DA"EL'), 'cf[10040] = "DAEL"'); // no link: all of Jira; a quote can't end the value
+assert.equal(compose("https://x.atlassian.net/jira/people/1/boards/96", "", "DAEL"), ""); // a link acli can't read
+assert.deepEqual(ticketSource(compose(link, "", "DAEL")), { kind: "jql", jql: 'filter = 10570 AND cf[10040] = "DAEL"' });
+assert.equal(sourceLabel(ticketSource(compose(link, "", "DAEL"))), 'filter = 10570 AND thématique = "DAEL"');
 // What a ticket's coder is told.
 assert.deepEqual(coderArgv(), ["claude", "--permission-mode", "auto"]);
 assert.equal(flat("a\n b\t\u0007c"), "a b c");
