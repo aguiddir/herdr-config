@@ -15,6 +15,7 @@
 !/mods/start-work/
 !/mods/clean-merged/
 !/mods/pr-inbox/
+!/mods/pipeline/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
