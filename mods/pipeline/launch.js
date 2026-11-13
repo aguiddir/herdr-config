@@ -3,15 +3,16 @@
 // git, repoOf, acli, ticket, the ticket search and the worktree are copied from
 // mods/start-work/main.js: Herdr refuses imports across mods, and start-work stays as it is,
 // for work a person does with an agent. The differences: Jira only, never an existing branch,
-// never a ticket someone else has. Where a repo's tickets are is read from start-work's
-// config.json (its Jira tab edits it): one place says it.
+// never a ticket someone else has. Where a repo's tickets are is the pipeline's own answer,
+// kept in its config.json: start-work's is not read.
 
-import { exec, home, appHome, readTextFile, notify, run, shared, setShared } from "herdr";
+import { exec, home, appHome, readTextFile, writeTextFile, notify, run, shared, setShared } from "herdr";
 import { branchFor, ticketSource, ticketQueries, sourceLabel, coderArgv, coderTask } from "./lib.js";
 
 export const TICKETS = "pipeline.tickets"; // { key, title, repo, branch, path, at } by key
 const FIELDS = "key,summary,status,assignee";
-const CONFIG = () => `${appHome()}/mods/start-work/config.json`;
+// { jira: { <repo>: source | [sources] }, branch_formats: { <repo>: "feat/{key}-{slug}" }, jira_start_status, jira_waiting_status }
+const CONFIG = () => `${appHome()}/mods/pipeline/config.json`;
 
 async function git(cwd, args) {
   const r = await exec("git", args, { cwd });
@@ -34,8 +35,8 @@ const ticket = (i, me) => ({
   who: i.fields.assignee?.displayName ?? null,
 });
 
-// The repo a folder belongs to (a linked worktree gives its repo's) and what start-work's
-// config says of it: null outside git.
+// The repo a folder belongs to (a linked worktree gives its repo's) and what config.json
+// says of it: null outside git.
 export async function sourcesOf(folder) {
   const common = await git(folder, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   if (!common.ok) return null;
@@ -44,6 +45,15 @@ export async function sourcesOf(folder) {
   const config = JSON.parse((await readTextFile(CONFIG())) ?? "{}");
   const named = config.jira?.[repo.name];
   return { repo, named: named == null ? [] : [].concat(named), format: config.branch_formats?.[repo.name], startStatus: config.jira_start_status ?? "En cours", waitingStatus: config.jira_waiting_status ?? "En attente" };
+}
+
+// Where a repo's tickets are, as the person gave them in the dialog: one string, or a list.
+export async function saveSources(repo, named) {
+  const before = await readTextFile(CONFIG());
+  const config = JSON.parse(before ?? "{}");
+  config.jira = { ...config.jira, [repo]: named.length === 1 ? named[0] : named };
+  if (!named.length) delete config.jira[repo];
+  await writeTextFile(CONFIG(), JSON.stringify(config, null, 2) + "\n", before);
 }
 
 // Every source's open tickets, once each: mine, then nobody's, then others'.

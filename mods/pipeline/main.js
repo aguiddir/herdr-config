@@ -3,15 +3,17 @@
 // stand: launch.js keeps a launched ticket in shared("pipeline.tickets"), its coder starts its
 // own reviewer through herdr-core and says its stage with a label, and this dialog joins the
 // two every 5 s while it is open and opens the terminal of the agent chosen. The second (n)
-// lists the open tickets of the focused terminal's repo, to tick, and launches a coder on each
-// ticked one. Once launched nothing here drives an agent. Only this machine's agents.
+// works like start-work's Jira tab: it asks where the tickets of the focused terminal's repo
+// are (a Jira link, a project key, JQL such as a label; kept in config.json), lists them to
+// tick, and launches a coder on each ticked one. The dialog opens on it when nothing runs.
+// Once launched nothing here drives an agent. Only this machine's agents.
 // Work a person does with an agent is start-work's, which knows nothing of this.
 
 import { View, div } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
+import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, focused, home } from "herdr";
 import { rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel } from "./lib.js";
-import { TICKETS, sourcesOf, ticketsOf, workOf, start } from "./launch.js";
+import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, start } from "./launch.js";
 
 const EVERY = 5000;
 const YOUNG = 120000; // a ticket just launched has no agent yet: not forgotten before this
@@ -46,6 +48,11 @@ export default class Pipeline extends View {
     this.loaded = false;
     this.error = "";
     this.view = "rows"; // or "pick": choosing the tickets to launch
+    this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10570 · labels = DATADELTA" });
+    this.sourceInput.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
+    this.adding = false; // the source field is shown
+    this.editing = null; // the source being edited, by index; null: a new one
+    this.sourceError = "";
     this.cwd = focused()?.cwd || home(); // the terminal the dialog was opened from: its repo's tickets
     this.pick = null; // the choice once asked for: { loading } | { error } | { from, me, tickets, notes, branches, prs, known }
     this.checked = new Set(); // ticked tickets, by id: each gets a coder
@@ -55,9 +62,10 @@ export default class Pipeline extends View {
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
     this.handle = cx.focus_handle();
     this.handle.focus();
-    cx.timer.after(600, () => this.handle.focus());
+    cx.timer.after(600, () => !this.adding && this.handle.focus()); // not over the source field
     cx.timer.every(EVERY, (cx) => this.refresh(cx));
     this.refresh(cx);
+    if (!Object.keys(shared(TICKETS) ?? {}).length) this.openPick(cx); // nothing runs: start by choosing
   }
 
   refresh(cx) {
@@ -68,9 +76,10 @@ export default class Pipeline extends View {
         this.rows = rowsOf(tickets, terms);
         const noCoder = gone(tickets, terms);
         const alive = (key) => terms.some((t) => under(t.cwd, tickets[key].path));
-        this.starting = noCoder.filter(alive);
+        const young = (key) => Date.now() - Date.parse(tickets[key].at) <= YOUNG;
+        this.starting = noCoder.filter((key) => alive(key) || young(key));
         // Forgotten: no terminal left in its worktree, and not launched a moment ago.
-        const dead = noCoder.filter((key) => !alive(key) && Date.now() - Date.parse(tickets[key].at) > YOUNG);
+        const dead = noCoder.filter((key) => !alive(key) && !young(key));
         // Read again: a launch may have added a ticket while hc answered.
         if (dead.length) setShared(TICKETS, Object.fromEntries(Object.entries(shared(TICKETS) ?? {}).filter(([key]) => !dead.includes(key))));
         this.error = "";
@@ -126,12 +135,73 @@ export default class Pipeline extends View {
       try {
         const from = await sourcesOf(this.cwd);
         if (!from) throw new Error("Le terminal actif n'est pas dans un dépôt git : ouvre le pipeline depuis un terminal du dépôt.");
-        if (!from.named.length) throw new Error(`Aucune source de tickets pour ${from.repo.name} : ajoute-la dans start-work (ctrl-shift-j, onglet Jira).`);
-        const [found, work] = await Promise.all([ticketsOf(from.named), workOf(from.repo.main)]);
-        this.pick = { from, ...found, ...work };
+        const [work] = await Promise.all([workOf(from.repo.main), this.loadTickets(from)]);
+        this.pick = { from, ...this.found, ...work };
+        if (!from.named.length) this.openSourceInput(); // asks where the tickets are
       } catch (e) { this.pick = { error: String(e.message ?? e) }; }
       cx.notify();
     });
+  }
+
+  // The sources' tickets into this.found; a Jira that fails is a note, not the end of the dialog.
+  async loadTickets(from) {
+    this.found = { me: undefined, tickets: [], notes: [] };
+    if (!from.named.length) return;
+    try { this.found = await ticketsOf(from.named); }
+    catch (e) { this.found.notes = [String(e.message ?? e)]; }
+  }
+
+  // Where this repo's tickets are: sources added, edited or removed here, kept in config.json.
+  async setSources(named, cx) {
+    const p = this.pick;
+    await saveSources(p.from.repo.name, named);
+    p.from.named = named;
+    Object.assign(p, { tickets: [], notes: ["Chargement…"] });
+    this.checked.clear();
+    this.at = 0;
+    cx.notify();
+    await this.loadTickets(p.from);
+    Object.assign(p, this.found);
+    cx.notify();
+  }
+
+  async submitSource(cx) {
+    const text = this.sourceInput.value().trim();
+    if (!ticketSource(text)) {
+      this.sourceError = "acli ne lit pas les tickets d'un board qui n'appartient pas à un projet. Colle le lien de son filtre : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre, puis copie l'adresse (…/issues/?filter=…).";
+      return cx.notify();
+    }
+    const named = [...this.pick.from.named];
+    if (this.editing === null) named.push(text);
+    else named[this.editing] = text;
+    this.closeSourceInput();
+    try { await this.setSources(named, cx); }
+    catch (e) { this.report = [String(e.message ?? e)]; cx.notify(); }
+  }
+
+  openSourceInput(index) {
+    this.editing = index ?? null;
+    this.adding = true;
+    this.sourceError = "";
+    this.sourceInput.set_value(index === undefined ? "" : this.pick.from.named[index]);
+    this.sourceInput.focus();
+  }
+
+  // Back to the list: the arrows and space are the dialog's again.
+  closeSourceInput() {
+    this.adding = false;
+    this.editing = null;
+    this.sourceError = "";
+    this.sourceInput.set_value("");
+    this.handle.focus();
+  }
+
+  // Leaving the choice: to the agents when some run, else out.
+  back() {
+    if (this.adding && this.pick?.from?.named.length) return this.closeSourceInput();
+    if (!this.rows.length && !this.starting.length) return this.close();
+    this.view = "rows";
+    this.handle.focus();
   }
 
   // Why this ticket can't be ticked, or "".
@@ -161,14 +231,16 @@ export default class Pipeline extends View {
         cx.notify();
       }
       this.busy = false;
-      if (!this.report.length) return this.close();
+      // To the agents: the ones just launched are named there until their terminal reports.
+      if (!this.report.length) { this.view = "rows"; this.refresh(cx); }
       cx.notify();
     });
   }
 
   pickKey(e, cx) {
     const rows = this.pick.tickets ?? [];
-    if (e.key === "escape") this.view = "rows";
+    if (e.key === "escape") this.back();
+    else if (this.adding) return; // typing a source: space and ↵ are the field's
     else if ((e.key === "down" || e.key === "up") && rows.length) { this.at = (this.at + (e.key === "down" ? 1 : rows.length - 1)) % rows.length; this.scroll.scroll_to_item(this.at); }
     else if (e.key === "space") this.tick(rows[this.at]);
     else if (e.key === "enter") this.launch(cx);
@@ -209,7 +281,23 @@ export default class Pipeline extends View {
         .child(div().flex_1().min_w(0).truncate().text_color(no ? t.dim : t.foreground).child(r.title))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(no || `${r.mine ? "toi" : "non assigné"} · ${r.status}`));
     };
-    const said = p.loading ? "Chargement…" : p.error ? p.error : !rows.length ? "Aucun ticket ouvert." : "";
+    const named = p.from?.named ?? [];
+    const said = p.loading ? "Chargement…" : p.error ? p.error : !named.length ? " " : !rows.length ? (p.notes.length ? " " : "Aucun ticket ouvert.") : "";
+    const field = (state) => Input.new(state).h(32).px(10).items_center().rounded(6).border(1).border_color(t.input).bg(t.background).text_color(t.foreground);
+    const chip = (text, i) => h_flex().id(`pp-src-${i}`).flex_none().h(22).px(8).gap(6).items_center().rounded(11).bg(t.raised)
+      .child(div().id(`pp-src-edit-${i}`).max_w(300).truncate().cursor_pointer().text_color(t.foreground).on_click((_e, cx) => { cx.stop_propagation(); this.openSourceInput(i); cx.notify(); }).child(sourceLabel(ticketSource(text) ?? { kind: "jql", jql: text })))
+      .child(div().id(`pp-src-del-${i}`).cursor_pointer().text_color(t.dim).on_click((_e, cx) => { cx.stop_propagation(); cx.spawn(async (cx) => this.setSources(named.filter((_, j) => j !== i), cx)); }).child("×"));
+    const sources = () => v_flex().gap(6).pb(10).text_size(12)
+      .when(named.length > 0, (c) => c.child(h_flex().flex_wrap().gap(6).items_center()
+        .child(div().text_color(t.dim).child("Tickets de :"))
+        .children(named.map(chip))
+        .when(!this.adding, (r) => r.child(div().id("pp-src-add").cursor_pointer().text_color(t.accent).on_click((_e, cx) => { cx.stop_propagation(); this.openSourceInput(); cx.notify(); }).child("+ ajouter")))))
+      .when(this.adding, (c) => c
+        .when(!named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${p.from.repo.name} à confier à des agents ? Colle le lien d'un board de projet ou d'un filtre Jira, une clé de projet, ou du JQL (labels = MONLABEL). C'est gardé dans mods/pipeline/config.json.`)))
+        .child(h_flex().gap(8).items_center()
+          .child(field(this.sourceInput).flex_1())
+          .when(named.length > 0, (x) => x.child(div().id("pp-src-cancel").cursor_pointer().text_color(t.dim).on_click((_e, cx) => { cx.stop_propagation(); this.closeSourceInput(); cx.notify(); }).child("annuler"))))
+        .when(Boolean(this.sourceError), (x) => x.child(div().text_color(t.blocked).child(this.sourceError))));
     return v_flex()
       .id("pipeline-dialog")
       .track_focus(this.handle)
@@ -221,7 +309,8 @@ export default class Pipeline extends View {
       .child(h_flex().justify_between().items_center()
         .child(div().text_size(16).font_semibold().text_color(t.foreground).child(p.from ? `Lancer des agents · ${p.from.repo.name}` : "Lancer des agents"))
         .child(div().text_size(12).text_color(t.dim).child("esc")))
-      .child(div().pt(6).pb(14).text_size(13).text_color(t.muted).child(p.from ? `Tickets de : ${p.from.named.map((s) => sourceLabel(ticketSource(s) ?? { kind: "jql", jql: s })).join(", ")}. Un ticket déjà commencé ou pris par quelqu'un se fait à la main.` : " "))
+      .child(div().pt(6).pb(10).text_size(13).text_color(t.muted).child("Chaque ticket coché reçoit un agent qui va seul jusqu'à la PR. Un ticket déjà commencé ou pris par quelqu'un se fait à la main."))
+      .when(Boolean(p.from), (el) => el.child(sources()))
       .when(Boolean(said), (el) => el.child(div().flex_1().text_color(p.error ? t.blocked : t.dim).child(said)))
       .when(!said, (el) => el.child(v_flex().flex_1().min_h(0).relative()
         .child(v_virtual_list("pipeline-pick", rows.length, 30, (i) => rows[i].id, (range) => rows.slice(range.start, range.end).map((r, i) => row(r, range.start + i))).track_scroll(this.scroll).on_item_click((id, cx) => { this.at = Math.max(0, rows.findIndex((r) => r.id === id)); this.tick(rows[this.at]); cx.notify(); }).size_full())
@@ -231,7 +320,7 @@ export default class Pipeline extends View {
       .children(this.report.map((line) => div().pt(4).text_size(12).text_color(t.blocked).child(line)))
       .child(h_flex().pt(14).gap(12).items_center()
         .child(div().flex_1().text_size(12).text_color(t.dim).child(this.busy ? "lancement des agents…" : n ? `${n} coché${n > 1 ? "s" : ""} : assigné${n > 1 ? "s" : ""} à toi, passé${n > 1 ? "s" : ""} « ${p.from.startStatus} », un Claude en mode auto chacun` : "↑↓ choisir · espace cocher"))
-        .child(button("pipeline-back", "Retour", "esc", false, (cx) => { this.view = "rows"; cx.notify(); }))
+        .child(button("pipeline-back", this.rows.length || this.starting.length ? "Voir les agents" : "Fermer", "esc", false, (cx) => { this.back(); cx.notify(); }))
         .when(n > 0 && !this.busy, (el) => el.child(button("pipeline-launch", `Lancer ${n} agent${n > 1 ? "s" : ""}`, "↵", true, (cx) => this.launch(cx)))));
   }
 
@@ -303,7 +392,7 @@ export default class Pipeline extends View {
     };
 
     const count = this.rows.length;
-    const empty = this.error || (this.loaded ? "Aucun ticket en cours. n pour en lancer." : "Chargement…");
+    const empty = this.error || (!this.loaded ? "Chargement…" : this.starting.length ? "Démarrage des agents…" : "Aucun ticket en cours. n pour en lancer.");
     return v_flex()
       .id("pipeline-dialog")
       .track_focus(this.handle)
