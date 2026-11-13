@@ -46,4 +46,11 @@ assert.deepEqual(rowsOf({ X: { key: "X", title: "x", branch: "x", path: "/w/a", 
 assert.deepEqual(rowsOf({}, terms), []);
 assert.deepEqual(rowsOf(tickets, []), []);
 assert.deepEqual(rowsOf(undefined, terms), []);
+// A reviewer that waits on someone is a stuck review, even while its coder still waits on it.
+const stuck = rowsOf(tickets, [T("t1", "/w/a-1", "working", { "pipeline.stage": "review" }), T("t2", "/w/a-1", "blocked", {}, "t1")])[0];
+assert.deepEqual([stuck.state, stuck.label], ["look", "à voir"]);
+assert.deepEqual(squares(stuck), ["done", "wait"]);
+// A coder back at work after a question is no longer waiting for an answer, whatever its label still says.
+const back = rowsOf(tickets, [T("t1", "/w/a-1", "working", { "pipeline.stage": "question" })])[0];
+assert.deepEqual([back.state, back.label, back.stage], ["running", "code", "code"]);
 console.log("ok");

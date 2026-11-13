@@ -18,17 +18,21 @@ function coderOf(ticket, terminals) {
 
 function rowOf(ticket, coder, terminals) {
   const said = coder.labels?.["pipeline.stage"];
-  const stage = STAGES.includes(said) ? said : "code"; // not said yet, or said wrong: it is coding
+  // Not said yet, or said wrong: it is coding. So is a coder back at work after a question,
+  // whatever its label still says: the answer came, nothing waits on the author any more.
+  const stage = !STAGES.includes(said) || (said === "question" && coder.status === "working") ? "code" : said;
   const questions = Number(coder.labels?.["pipeline.questions"]) || 0;
-  // Stopped anywhere but at a question or at the end: something to look at.
-  const state = stage === "question" ? "question" : stage === "ready" ? "ready" : coder.status === "working" ? "running" : "look";
+  const reviewer = terminals.find((t) => t.parent === coder.address) ?? null;
+  // Stopped anywhere but at a question or at the end: something to look at. So is a reviewer
+  // that waits on someone: its coder would wait on it, "working", for as long as nobody looks.
+  const state = stage === "question" ? "question" : stage === "ready" ? "ready" : coder.status === "working" && reviewer?.status !== "blocked" ? "running" : "look";
   const label = {
     question: "question",
     look: "à voir",
     ready: questions ? `prête · ${questions} question${questions > 1 ? "s" : ""}` : "prête à merger",
     running: { code: "code", review: "review", fix: "code, 2ᵉ passe" }[stage],
   }[state];
-  return { ...ticket, coder, reviewer: terminals.find((t) => t.parent === coder.address) ?? null, stage, questions, state, label };
+  return { ...ticket, coder, reviewer, stage, questions, state, label };
 }
 
 // One row per ticket whose coder is alive; a ticket without one is left out (see gone).
