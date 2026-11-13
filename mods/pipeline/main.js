@@ -12,8 +12,8 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, setShared, focused, home } from "herdr";
-import { rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose } from "./lib.js";
-import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, start } from "./launch.js";
+import { rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose, boardLink } from "./lib.js";
+import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, filtersOfBoard, start } from "./launch.js";
 
 const EVERY = 5000;
 const YOUNG = 120000; // a ticket just launched has no agent yet: not forgotten before this
@@ -56,6 +56,7 @@ export default class Pipeline extends View {
     this.adding = false; // the source field is shown
     this.editing = null; // the source being edited, by index; null: a new one
     this.sourceError = "";
+    this.filters = []; // a personal board's link was typed: the filters that may be its own, to pick one
     this.cwd = focused()?.cwd || home(); // the terminal the dialog was opened from: its repo's tickets
     this.pick = null; // the choice once asked for: { loading } | { error } | { from, me, tickets, notes, branches, prs, known }
     this.checked = new Set(); // ticked tickets, by id: each gets a coder
@@ -169,6 +170,15 @@ export default class Pipeline extends View {
   }
 
   async submitSource(cx) {
+    // A personal board's link: acli can't say which filter it shows. Its name finds candidates.
+    const board = boardLink(this.sourceInput.value());
+    if (board) {
+      this.sourceError = "Recherche du filtre de ce board…";
+      cx.notify();
+      try { this.filters = (await filtersOfBoard(board.id)).map((f) => ({ ...f, link: `${board.site}/issues/?filter=${f.id}` })); }
+      catch { this.filters = []; }
+      if (this.filters.length) { this.sourceError = ""; return cx.notify(); }
+    }
     const text = compose(this.sourceInput.value(), this.labelInput.value(), this.themeInput.value());
     if (!ticketSource(text)) {
       this.sourceError = "acli ne lit pas les tickets d'un board qui n'appartient pas à un projet. Colle le lien de son filtre : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre, puis copie l'adresse (…/issues/?filter=…).";
@@ -186,6 +196,7 @@ export default class Pipeline extends View {
     this.editing = index ?? null;
     this.adding = true;
     this.sourceError = "";
+    this.filters = [];
     this.sourceInput.set_value(index === undefined ? "" : this.pick.from.named[index]); // a kept one comes back whole, here
     this.labelInput.set_value("");
     this.themeInput.set_value("");
@@ -197,6 +208,7 @@ export default class Pipeline extends View {
     this.adding = false;
     this.editing = null;
     this.sourceError = "";
+    this.filters = [];
     this.sourceInput.set_value("");
     this.handle.focus();
   }
@@ -304,6 +316,11 @@ export default class Pipeline extends View {
           .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Label")).child(field(this.labelInput)))
           .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Thématique")).child(field(this.themeInput)))
           .when(named.length > 0, (x) => x.child(div().id("pp-src-cancel").cursor_pointer().text_color(t.dim).on_click((_e, cx) => { cx.stop_propagation(); this.closeSourceInput(); cx.notify(); }).child("annuler"))))
+        .when(this.filters.length > 0, (x) => x
+          .child(div().pt(4).text_color(t.muted).child("Ce board n'appartient pas à un projet, et Jira ne dit pas quel filtre il affiche. Lequel est-ce ? (le premier est le plus probable ; label et thématique sont gardés)"))
+          .children(this.filters.slice(0, 8).map((f) => h_flex().id(`pp-filter-${f.id}`).h(24).px(8).gap(10).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.sourceInput.set_value(f.link); this.filters = []; cx.spawn(async (cx) => this.submitSource(cx)); })
+            .child(div().w(60).flex_none().text_color(t.done).child(f.id)).child(div().truncate().text_color(t.foreground).child(f.name)))))
         .when(Boolean(this.sourceError), (x) => x.child(div().text_color(t.blocked).child(this.sourceError))));
     return v_flex()
       .id("pipeline-dialog")
