@@ -12,7 +12,7 @@ import { rowsOf, squares, summary, gone } from "./lib.js";
 const TICKETS = "pipeline.tickets";
 const EVERY = 5000;
 const YOUNG = 120000; // a ticket just launched has no agent yet: not forgotten before this
-const RESUME = "L'auteur a répondu sur le ticket : relis-le et reprends.";
+const RESUME = "L'auteur a répondu sur le ticket : relis-le, repasse `hc label $HC_TERMINAL_ID pipeline.stage=code`, et reprends.";
 
 const under = (cwd, dir) => cwd === dir || cwd.startsWith(`${dir}/`);
 
@@ -60,7 +60,8 @@ export default class Pipeline extends View {
         this.starting = noCoder.filter(alive);
         // Forgotten: no terminal left in its worktree, and not launched a moment ago.
         const dead = noCoder.filter((key) => !alive(key) && Date.now() - Date.parse(tickets[key].at) > YOUNG);
-        if (dead.length) setShared(TICKETS, Object.fromEntries(Object.entries(tickets).filter(([key]) => !dead.includes(key))));
+        // Read again: start-work may have added a ticket while hc answered.
+        if (dead.length) setShared(TICKETS, Object.fromEntries(Object.entries(shared(TICKETS) ?? {}).filter(([key]) => !dead.includes(key))));
         this.error = "";
       } catch (e) { this.error = String(e.message ?? e); } // hc unreachable: keep what is shown, forget nothing
       this.loaded = true;
