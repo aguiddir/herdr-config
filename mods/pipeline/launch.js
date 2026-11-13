@@ -7,7 +7,7 @@
 // kept in its config.json: start-work's is not read.
 
 import { exec, home, appHome, readTextFile, writeTextFile, notify, run, shared, setShared } from "herdr";
-import { branchFor, ticketSource, ticketQueries, sourceLabel, coderArgv, coderTask } from "./lib.js";
+import { branchFor, ticketSource, ticketQueries, sourceLabel, boardFilters, coderArgv, coderTask } from "./lib.js";
 
 export const TICKETS = "pipeline.tickets"; // { key, title, repo, branch, path, at } by key
 const FIELDS = "key,summary,status,assignee";
@@ -54,6 +54,12 @@ export async function saveSources(repo, named) {
   config.jira = { ...config.jira, [repo]: named.length === 1 ? named[0] : named };
   if (!named.length) delete config.jira[repo];
   await writeTextFile(CONFIG(), JSON.stringify(config, null, 2) + "\n", before);
+}
+
+// The filters named after a board, the likeliest first: the person says which one the board shows.
+export async function filtersOfBoard(id) {
+  const board = JSON.parse(await acli(["board", "view", "--id", id, "--json"]));
+  return boardFilters(JSON.parse(await acli(["filter", "search", "--name", board.name, "--limit", "30", "--json"])), board.name);
 }
 
 // Every source's open tickets, once each: mine, then nobody's, then others'.

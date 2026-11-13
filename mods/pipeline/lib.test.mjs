@@ -1,6 +1,6 @@
 // node mods/pipeline/lib.test.mjs
 import assert from "node:assert/strict";
-import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, coderArgv, coderTask, flat } from "./lib.js";
+import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, boardLink, boardFilters, coderArgv, coderTask, flat } from "./lib.js";
 
 const T = (address, cwd, status, labels = {}, parent = null) => ({ address, cwd, status, labels, parent, name: null });
 const tickets = {
@@ -74,6 +74,11 @@ assert.equal(compose("", "", 'DA"EL'), 'cf[10040] = "DAEL"'); // no link: all of
 assert.equal(compose("https://x.atlassian.net/jira/people/1/boards/96", "", "DAEL"), ""); // a link acli can't read
 assert.deepEqual(ticketSource(compose(link, "", "DAEL")), { kind: "jql", jql: 'filter = 10570 AND cf[10040] = "DAEL"' });
 assert.equal(sourceLabel(ticketSource(compose(link, "", "DAEL"))), 'filter = 10570 AND thématique = "DAEL"');
+// A personal board's link: not a source, but its filter can be looked up.
+assert.deepEqual(boardLink("https://x.atlassian.net/jira/people/637c/boards/96"), { site: "https://x.atlassian.net", id: "96" });
+assert.equal(boardLink("https://x.atlassian.net/jira/software/projects/POSO/boards/1802"), null); // a project's: read as it is
+assert.equal(boardLink("labels = X"), null);
+assert.deepEqual(boardFilters([{ id: 3, name: "Table_Ronde_DATADELTA" }, { id: 1, name: "Filtre pour Table_Ronde" }, { id: 2, name: "Filtre pour Table_Ronde 2" }], "Table_Ronde").map((f) => f.id), ["1", "3", "2"]);
 // What a ticket's coder is told.
 assert.deepEqual(coderArgv(), ["claude", "--permission-mode", "auto"]);
 assert.equal(flat("a\n b\t\u0007c"), "a b c");

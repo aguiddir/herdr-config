@@ -112,6 +112,20 @@ export function ticketSource(text) {
   return t && !/^https?:/.test(t) ? { kind: "jql", jql: t } : null;
 }
 
+// A board outside a project (…/jira/people/<id>/boards/96): ticketSource can't read it, since
+// acli doesn't say which filter a board shows. Its site and number, to look its filter up by name.
+export function boardLink(text) {
+  const m = !ticketSource(text) && text.trim().match(/^(https?:\/\/[^/]+)\/.*\/boards\/(\d+)/);
+  return m ? { site: m[1], id: m[2] } : null;
+}
+
+// The filters that may be a board's, the likeliest first: Jira names a board's own filter
+// "Filtre pour <board>" ("Filter for <board>").
+export function boardFilters(filters, board) {
+  const own = (f) => (new RegExp(`^(filtre pour|filter for) ${board.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i").test(f.name.trim()) ? 0 : 1);
+  return filters.map((f) => ({ id: String(f.id), name: f.name })).sort((a, b) => own(a) - own(b));
+}
+
 // The searches to run in turn, the first with results wins: a project's open sprint,
 // else all its open tickets; a filter's or JQL's open tickets. A key is quoted: some are JQL words.
 export function ticketQueries(source, filterJql) {
