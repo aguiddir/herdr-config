@@ -98,6 +98,9 @@ export function existingWork(item, branches, prs) {
 // ticket nobody has begun. One with work under way, or someone else's, is done by hand (start-work).
 export function whyNot(row, branches, prs) {
   if (existingWork(row, branches, prs)) return "déjà commencé";
+  // Past "to do" in Jira (Done Dev, En validation, Bloqué…): its branch may be merged and gone,
+  // so nothing above says it was begun.
+  if (!row.todo) return `déjà « ${row.status} »`;
   return row.who && !row.mine ? `pris par ${row.who}` : "";
 }
 

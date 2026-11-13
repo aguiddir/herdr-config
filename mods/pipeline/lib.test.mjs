@@ -56,12 +56,13 @@ assert.deepEqual([back.state, back.label, back.stage], ["running", "code", "code
 // Which tickets may get a coder: none with work under way, none someone else has.
 assert.equal(branchFor({ key: "POSO-12", title: "Données : fix l'accès" }, "feat/{key}-{slug}"), "feat/poso-12-donnees-fix-l-acces");
 const prs = [{ title: "✨ A-2: truc", headRefName: "whatever" }];
-assert.equal(whyNot({ key: "A-1", mine: false, who: null }, ["main"], prs), "");
-assert.equal(whyNot({ key: "A-1", mine: true, who: "Moi" }, ["main"], prs), "");
-assert.equal(whyNot({ key: "A-1", mine: false, who: "Léa" }, ["main"], prs), "pris par Léa");
-assert.equal(whyNot({ key: "A-2", mine: true, who: "Moi" }, ["main"], prs), "déjà commencé"); // a PR names it
-assert.equal(whyNot({ key: "A-1", mine: false, who: null }, ["feat/a-1-x"], []), "déjà commencé"); // a branch does
-assert.equal(whyNot({ key: "A-1", mine: false, who: null }, ["feat/a-12-x", "backup/a-1"], []), ""); // A-12 is not A-1
+assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["main"], prs), "");
+assert.equal(whyNot({ todo: true, key: "A-1", mine: true, who: "Moi" }, ["main"], prs), "");
+assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: "Léa" }, ["main"], prs), "pris par Léa");
+assert.equal(whyNot({ todo: true, key: "A-2", mine: true, who: "Moi" }, ["main"], prs), "déjà commencé"); // a PR names it
+assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["feat/a-1-x"], []), "déjà commencé"); // a branch does
+assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["feat/a-12-x", "backup/a-1"], []), ""); // A-12 is not A-1
+assert.equal(whyNot({ todo: false, status: "Done Dev", key: "A-1", mine: false, who: null }, ["main"], prs), "déjà « Done Dev »"); // merged, branch gone: still not to redo
 assert.deepEqual(ticketSource("https://x.atlassian.net/issues/?filter=10570"), { kind: "filter", id: "10570" });
 assert.deepEqual(ticketQueries({ kind: "jql", jql: "labels = X ORDER BY rank" }), ["(labels = X) AND statusCategory != Done ORDER BY updated DESC"]);
 // The dialog's three fields make one source.
