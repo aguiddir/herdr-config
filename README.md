@@ -27,6 +27,8 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 - l'onglet **PR** liste les PR ouvertes : choisir une PR ouvre un worktree sur sa branche, pour la relire ou la modifier (celle d'un fork est récupérée par `pull/<n>/head`) ;
 - `tab` passe à l'onglet suivant, `shift-tab` au précédent. Taper `#12` ouvre Issues (sauf depuis PR), une clé ouvre Jira. Un texte libre donne un travail « sans ticket ».
 
+**Lancer des agents** : dans l'onglet Jira, chaque ticket a une case (clic, ou `ctrl-espace` sur la ligne choisie). Avec au moins une case cochée, `↵` devient « Lancer N agents » : chaque ticket coché m'est assigné, passe « En cours », reçoit son worktree et son espace, et un Claude y démarre en `--permission-mode auto` avec la marche à suivre jusqu'à la PR (voir [pipeline](#pipeline)). Un ticket qui a déjà une branche ou une PR n'a pas d'agent : il est nommé, et se reprend à la main. Un ticket qui échoue n'arrête pas les autres. « Créer sans agent » garde le comportement de toujours sur la ligne choisie. Le statut où un agent range un ticket sur lequel il doit poser une question se règle par `jira_waiting_status` dans `config.json` (« En attente » par défaut).
+
 **Créer** fait un worktree dans `~/.herdr/worktrees/<repo>/<branche>`, à partir de `origin/HEAD`. Il ouvre dessus un espace avec Claude. Pour un ticket Jira qui n'est pas à moi, la case « M'assigner » (cochée par défaut) me l'assigne, et le passe « En cours » s'il était encore à faire.
 
 Si le ticket a déjà une branche ou une PR ouverte, le bouton devient **Reprendre** : il ouvre cette branche au lieu d'en créer une, ou affiche l'espace qui est déjà dessus.
