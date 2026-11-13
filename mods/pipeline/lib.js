@@ -142,12 +142,14 @@ export function ticketQueries(source, filterJql) {
 // so JQL refuses it. ponytail: this site's id; a config key when another Jira needs the mod.
 const THEME = "cf[10040]";
 
-// One source from the three fields of the dialog: where (a link, a project key or JQL, maybe
-// empty), a label, a thématique. Without the last two it is the first, as typed (a project then
-// keeps its open sprint). "" when the link can't be read.
-export function compose(where, label, theme) {
+// One source from the four fields of the dialog: where (a link, a project key or JQL, maybe
+// empty), the tickets' prefix (the "MM" of MM-1505: a ticket's key or link gives it too), a
+// label, a thématique. Without the last three it is the first, as typed (a project then keeps
+// its open sprint). "" when the link can't be read.
+export function compose(where, label, theme, prefix = "") {
   const quoted = (v) => `"${v.trim().replace(/["\\]/g, "")}"`;
-  const extra = [label.trim() && `labels = ${quoted(label)}`, theme.trim() && `${THEME} = ${quoted(theme)}`].filter(Boolean);
+  const project = (prefix.trim().match(/([A-Za-z][A-Za-z0-9_]*)-\d+\/?$/)?.[1] ?? prefix).toUpperCase();
+  const extra = [project.trim() && `project = ${quoted(project)}`, label.trim() && `labels = ${quoted(label)}`, theme.trim() && `${THEME} = ${quoted(theme)}`].filter(Boolean);
   if (!extra.length) return where.trim();
   const s = where.trim() ? ticketSource(where) : null;
   if (where.trim() && !s) return "";

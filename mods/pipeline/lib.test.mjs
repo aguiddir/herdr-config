@@ -71,6 +71,9 @@ assert.equal(compose(` ${link} `, "", " "), link); // alone, as typed
 assert.equal(compose(link, "", "DAEL"), 'filter = 10570 AND cf[10040] = "DAEL"');
 assert.equal(compose("POSO", "back", "DAEL"), 'project = "POSO" AND labels = "back" AND cf[10040] = "DAEL"');
 assert.equal(compose("status = Open OR status = New", "x", ""), '(status = Open OR status = New) AND labels = "x"');
+assert.equal(compose(link, "", "DAEL", "mm"), 'filter = 10570 AND project = "MM" AND cf[10040] = "DAEL"');
+assert.equal(compose("", "", "", "https://x.atlassian.net/browse/MM-1505"), 'project = "MM"'); // a ticket's link or key names its prefix
+assert.equal(compose("", "", "", " MM-1505 "), 'project = "MM"');
 assert.equal(compose("", "", 'DA"EL'), 'cf[10040] = "DAEL"'); // no link: all of Jira; a quote can't end the value
 assert.equal(compose("https://x.atlassian.net/jira/people/1/boards/96", "", "DAEL"), ""); // a link acli can't read
 assert.deepEqual(ticketSource(compose(link, "", "DAEL")), { kind: "jql", jql: 'filter = 10570 AND cf[10040] = "DAEL"' });

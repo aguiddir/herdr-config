@@ -50,9 +50,10 @@ export default class Pipeline extends View {
     this.view = "rows"; // or "pick": choosing the tickets to launch
     // A source is typed in three fields, and kept as one line (lib.js: compose).
     this.sourceInput = InputState.new({ placeholder: "https://…/projects/POSO/boards/1802 · https://…/issues/?filter=10570 · POSO" });
+    this.prefixInput = InputState.new({ placeholder: "MM" });
     this.labelInput = InputState.new({ placeholder: "DATADELTA" });
     this.themeInput = InputState.new({ placeholder: "DAEL" });
-    for (const input of [this.sourceInput, this.labelInput, this.themeInput]) input.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
+    for (const input of [this.sourceInput, this.prefixInput, this.labelInput, this.themeInput]) input.on("submit", (_e, cx) => cx.spawn(async (cx) => this.submitSource(cx)));
     this.adding = false; // the source field is shown
     this.editing = null; // the source being edited, by index; null: a new one
     this.sourceError = "";
@@ -179,7 +180,7 @@ export default class Pipeline extends View {
       catch { this.filters = []; }
       if (this.filters.length) { this.sourceError = ""; return cx.notify(); }
     }
-    const text = compose(this.sourceInput.value(), this.labelInput.value(), this.themeInput.value());
+    const text = compose(this.sourceInput.value(), this.labelInput.value(), this.themeInput.value(), this.prefixInput.value());
     if (!ticketSource(text)) {
       this.sourceError = "acli ne lit pas les tickets d'un board qui n'appartient pas à un projet. Colle le lien de son filtre : sur le board, ⋯ → Paramètres du tableau → Filtre → Modifier la requête de filtre, puis copie l'adresse (…/issues/?filter=…).";
       return cx.notify();
@@ -198,8 +199,7 @@ export default class Pipeline extends View {
     this.sourceError = "";
     this.filters = [];
     this.sourceInput.set_value(index === undefined ? "" : this.pick.from.named[index]); // a kept one comes back whole, here
-    this.labelInput.set_value("");
-    this.themeInput.set_value("");
+    for (const input of [this.prefixInput, this.labelInput, this.themeInput]) input.set_value("");
     this.sourceInput.focus();
   }
 
@@ -310,14 +310,15 @@ export default class Pipeline extends View {
         .children(named.map(chip))
         .when(!this.adding, (r) => r.child(div().id("pp-src-add").cursor_pointer().text_color(t.accent).on_click((_e, cx) => { cx.stop_propagation(); this.openSourceInput(); cx.notify(); }).child("+ ajouter")))))
       .when(this.adding, (c) => c
-        .when(!named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${p.from.repo.name} à confier à des agents ? Le lien d'un board de projet ou d'un filtre Jira (ou une clé de projet, ou du JQL), et de quoi le restreindre : un label, une thématique. Un seul des trois suffit. C'est gardé dans mods/pipeline/config.json.`)))
+        .when(!named.length, (x) => x.child(div().text_size(13).text_color(t.muted).child(`Où sont les tickets de ${p.from.repo.name} à confier à des agents ? Le lien d'un board de projet ou d'un filtre Jira (ou une clé de projet, ou du JQL), et de quoi le restreindre : le préfixe des tickets (MM pour MM-1505), un label, une thématique. Un seul des quatre suffit. C'est gardé dans mods/pipeline/config.json.`)))
         .child(h_flex().gap(8).items_end()
           .child(v_flex().flex_1().gap(3).child(div().text_size(11).text_color(t.dim).child("Lien Jira")).child(field(this.sourceInput)))
-          .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Label")).child(field(this.labelInput)))
-          .child(v_flex().w(150).gap(3).child(div().text_size(11).text_color(t.dim).child("Thématique")).child(field(this.themeInput)))
+          .child(v_flex().w(90).gap(3).child(div().text_size(11).text_color(t.dim).child("Préfixe")).child(field(this.prefixInput)))
+          .child(v_flex().w(140).gap(3).child(div().text_size(11).text_color(t.dim).child("Label")).child(field(this.labelInput)))
+          .child(v_flex().w(140).gap(3).child(div().text_size(11).text_color(t.dim).child("Thématique")).child(field(this.themeInput)))
           .when(named.length > 0, (x) => x.child(div().id("pp-src-cancel").cursor_pointer().text_color(t.dim).on_click((_e, cx) => { cx.stop_propagation(); this.closeSourceInput(); cx.notify(); }).child("annuler"))))
         .when(this.filters.length > 0, (x) => x
-          .child(div().pt(4).text_color(t.muted).child("Ce board n'appartient pas à un projet, et Jira ne dit pas quel filtre il affiche. Lequel est-ce ? (le premier est le plus probable ; label et thématique sont gardés)"))
+          .child(div().pt(4).text_color(t.muted).child("Ce board n'appartient pas à un projet, et Jira ne dit pas quel filtre il affiche. Lequel est-ce ? (le premier est le plus probable ; préfixe, label et thématique sont gardés)"))
           .children(this.filters.slice(0, 8).map((f) => h_flex().id(`pp-filter-${f.id}`).h(24).px(8).gap(10).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => { cx.stop_propagation(); this.sourceInput.set_value(f.link); this.filters = []; cx.spawn(async (cx) => this.submitSource(cx)); })
             .child(div().w(60).flex_none().text_color(t.done).child(f.id)).child(div().truncate().text_color(t.foreground).child(f.name)))))
