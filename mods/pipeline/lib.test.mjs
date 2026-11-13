@@ -103,7 +103,9 @@ assert.match(ct, /hc wait review-poso-118/);
 assert.match(ct, /\.pipeline-review\.md/);
 assert.match(ct, /ne le commite jamais/);
 assert.match(ct, /Deux passes de correction au plus/);
-assert.match(ct, /## Hypothèses et questions/);
+assert.match(ct, /## Hypothèses »/);
+// A question is a comment of the pull request, one each: a description is read once, a comment is answered.
+assert.match(ct, /un commentaire par question \(`gh pr comment`\)/);
 assert.match(ct, /pipeline\.stage=ready pipeline\.questions=/);
 assert.match(ct, /« En attente »/);
 assert.match(ct, /Ne merge jamais/);

@@ -420,7 +420,7 @@ export default class Pipeline extends View {
       const doing = row.state === "question"
         ? ["Question posée à l'auteur du ticket, en commentaire Jira", "Le ticket est en attente. Si tu connais la réponse, écris-la dans le terminal de l'agent ; sinon « Reprendre » lui dit de relire le ticket quand l'auteur a répondu."]
         : row.state === "ready"
-          ? ["Terminé", row.questions ? `La PR est ouverte, avec ${row.questions} question${row.questions > 1 ? "s" : ""} dans sa section « Hypothèses et questions ».` : "La PR est ouverte, sans question en attente."]
+          ? ["Terminé", row.questions ? `La PR est ouverte, avec ${row.questions} question${row.questions > 1 ? "s" : ""} en commentaire${row.questions > 1 ? "s" : ""}.` : "La PR est ouverte, sans question en attente."]
           : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (row.state === "look" ? "À l'arrêt sans avoir fini. Il attend peut-être une commande lancée en arrière-plan (build, CI) et reprendra seul ; sinon ouvre son terminal." : "…")];
       return [
         div().text_size(15).font_semibold().text_color(t.foreground).child(`${row.key} · ${row.title}`),

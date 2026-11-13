@@ -141,7 +141,7 @@ Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans so
 | `code`, `review`, `code, 2ᵉ passe`, `CI` | un agent travaille ; le codeur dit son étape lui-même (`hc label … pipeline.stage=…`) |
 | `question` | le ticket ne disait pas quoi construire, ou l'hypothèse aurait été irréversible : la question est en commentaire Jira |
 | `à voir` | le codeur est à l'arrêt ailleurs qu'à une question ou à la fin ; il attend peut-être une commande en arrière-plan (build, CI) et reprendra seul |
-| `prête à merger`, `prête · 2 questions` | la PR est ouverte ; les questions sont dans sa section « Hypothèses et questions » |
+| `prête à merger`, `prête · 2 questions` | la PR est ouverte ; chaque question est un commentaire de la PR, les hypothèses sont dans sa description |
 
 - `↑↓` choisit un ticket, `←→` le codeur ou le relecteur, `↵` ouvre son terminal, `esc` ferme ;
 - sur un ticket en `question`, `↵` dit au codeur que l'auteur a répondu sur le ticket, `o` ouvre son terminal ;
