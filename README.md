@@ -11,6 +11,8 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
 | `mods/pr-inbox/` | les PR GitHub qui m'attendent : un tiroir sur le bord droit, un toast quand une review tombe, et un Claude lancé sur la PR (`ctrl-shift-g`) |
 | `layouts/mine.json` | mon layout : `main` plus le tiroir des PR |
+| `mods/pipeline/` | où en sont les agents lancés sur des tickets : codeur, relecteur, PR (`ctrl-shift-a`) |
+| `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
 
 ## start-work
 
@@ -121,6 +123,27 @@ git fetch origin && git checkout -f main
 ```
 
 Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. Herdr ne permet pas d'étendre un layout fourni : `mine.json` est une copie de son `main.json` plus deux ajouts, la colonne `gutter` de 50 px dans `work-body` et le bloc `floating`. Quand Herdr change `main.json`, refaire la copie : `diff layouts/main.json layouts/mine.json` ne doit montrer que ces deux ajouts.
+
+## pipeline
+
+`ctrl-shift-a` : les tickets sur lesquels `start-work` a lancé un agent, et où en est chacun. Le dialogue ne pilote rien : il lit ce que herdr-core sait des terminaux, toutes les 5 s tant qu'il est ouvert.
+
+Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans son premier message : lire le ticket, coder, faire relire, corriger (deux passes au plus), ouvrir la PR, commenter le ticket. Il lance lui-même le **relecteur** avec herdr-core (`hc run reviewer …`, le rôle de `hc-templates/reviewer.md`) : un autre Claude, au contexte neuf, dans son propre terminal. Le relecteur écrit son rapport dans `.pipeline-review.md`, que le codeur lit puis supprime : le mode auto de Claude refuse qu'un agent écrive dans le terminal d'un autre.
+
+À gauche, un ticket par ligne, avec deux cases (code, review) et son état :
+
+| État | Ce que ça veut dire |
+|---|---|
+| `code`, `review`, `code, 2ᵉ passe` | un agent travaille ; le codeur dit son étape lui-même (`hc label … pipeline.stage=…`) |
+| `question` | le ticket ne disait pas quoi construire, ou l'hypothèse aurait été irréversible : la question est en commentaire Jira |
+| `à voir` | le codeur s'est arrêté ailleurs qu'à une question ou à la fin |
+| `prête à merger`, `prête · 2 questions` | la PR est ouverte ; les questions sont dans sa section « Hypothèses et questions » |
+
+- `↑↓` choisit un ticket, `←→` le codeur ou le relecteur, `↵` ouvre son terminal, `esc` ferme ;
+- sur un ticket en `question`, `↵` dit au codeur que l'auteur a répondu sur le ticket, `o` ouvre son terminal ;
+- un ticket quitte la liste quand il n'y a plus de terminal dans son worktree (son espace est fermé).
+
+Les agents ne demandent rien en route : ils tournent en `--permission-mode auto`, prennent l'hypothèse la plus raisonnable et la notent dans la PR. Ils ne mergent pas et ne poussent que sur la branche du ticket ; c'est leur consigne qui le dit, et la protection de la branche principale sur GitHub qui le garantit. Seulement les agents de cette machine.
 
 ## Installer start-work
 
