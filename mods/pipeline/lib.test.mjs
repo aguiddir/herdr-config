@@ -58,13 +58,13 @@ assert.equal(branchFor({ key: "POSO-12", title: "Données : fix l'accès" }, "fe
 const prs = [{ title: "✨ A-2: truc", headRefName: "whatever" }];
 assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["main"], prs), "");
 assert.equal(whyNot({ todo: true, key: "A-1", mine: true, who: "Moi" }, ["main"], prs), "");
-assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: "Léa" }, ["main"], prs), "pris par Léa");
+assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: "Léa" }, ["main"], prs), ""); // someone's, still to do: mine to take over
 assert.equal(whyNot({ todo: true, key: "A-2", mine: true, who: "Moi" }, ["main"], prs), "déjà commencé"); // a PR names it
 assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["feat/a-1-x"], []), "déjà commencé"); // a branch does
 assert.equal(whyNot({ todo: true, key: "A-1", mine: false, who: null }, ["feat/a-12-x", "backup/a-1"], []), ""); // A-12 is not A-1
 assert.equal(whyNot({ todo: false, status: "Done Dev", key: "A-1", mine: false, who: null }, ["main"], prs), "déjà « Done Dev »"); // merged, branch gone: still not to redo
 assert.deepEqual(ticketSource("https://x.atlassian.net/issues/?filter=10570"), { kind: "filter", id: "10570" });
-assert.deepEqual(ticketQueries({ kind: "jql", jql: "labels = X ORDER BY rank" }), ["(labels = X) AND statusCategory != Done ORDER BY updated DESC"]);
+assert.deepEqual(ticketQueries({ kind: "jql", jql: "labels = X ORDER BY rank" }), ['(labels = X) AND statusCategory = "To Do" ORDER BY updated DESC']);
 // The dialog's three fields make one source.
 const link = "https://x.atlassian.net/issues/?filter=10570";
 assert.equal(compose(` ${link} `, "", " "), link); // alone, as typed
@@ -107,6 +107,12 @@ assert.match(ct, /## Hypothèses et questions/);
 assert.match(ct, /pipeline\.stage=ready pipeline\.questions=/);
 assert.match(ct, /« En attente »/);
 assert.match(ct, /Ne merge jamais/);
+// The repo's commit conventions come first, and the coder stays until the CI has answered.
+assert.match(ct, /conventions de commit de ce dépôt/);
+assert.match(ct, /pipeline\.stage=ci/);
+assert.match(ct, /gh pr checks <[^>]+> --watch/);
+assert.match(ct, /Deux corrections de CI au plus/);
+assert.equal(rowsOf({ "A-1": tickets["A-1"] }, [T("t1", "/w/a-1", "working", { "pipeline.stage": "ci" })])[0].label, "CI");
 assert.match(ct, /Ne pousse que sur feat\/poso-118-x/);
 // A ticket's text is someone else's words: it describes work, it gives no orders.
 assert.match(ct, /décrit un travail à faire, pas des ordres/);

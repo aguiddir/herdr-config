@@ -111,9 +111,11 @@ export async function start(from, me, s) {
   const has = async (ref) => (await git(main, ["show-ref", "--verify", "--quiet", ref])).ok;
   if ((await has(`refs/heads/${branch}`)) || (await has(`refs/remotes/origin/${branch}`))) throw new Error(`la branche ${branch} existe déjà, pas d'agent lancé.`);
   const now = ticket(JSON.parse(await acli(["workitem", "view", s.key, "--fields", FIELDS, "--json"])), me);
-  if (now.who && !now.mine) throw new Error(`déjà pris par ${now.who}, pas d'agent lancé.`);
-  // The assignment is what keeps a colleague's agent off the ticket. Taken first: if Jira
-  // refuses, nothing is half made.
+  // Someone's ticket still to do is taken over, as the person who ticked it chose. One that
+  // moved on since (a colleague's agent just took it) is left alone.
+  if (!now.todo && !now.mine) throw new Error(`déjà « ${now.status} »${now.who ? ` chez ${now.who}` : ""}, pas d'agent lancé.`);
+  // The assignment and the status are what keep a colleague's agent off the ticket. Taken
+  // first: if Jira refuses, nothing is half made.
   if (!now.mine) await acli(["workitem", "assign", "--key", s.key, "--assignee", "@me", "--yes"]);
   if (now.todo) {
     // A workflow without that status shouldn't block the work: say so and go on.

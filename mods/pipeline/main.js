@@ -134,7 +134,7 @@ export default class Pipeline extends View {
   // The second view: the open tickets of the repo, read once per opening of the dialog.
   openPick(cx) {
     this.view = "pick";
-    if (this.pick) return;
+    if (this.pick) return void (this.pick.from && !this.pick.from.named.length && this.openSourceInput());
     this.pick = { loading: true };
     cx.spawn(async (cx) => {
       try {
@@ -213,6 +213,27 @@ export default class Pipeline extends View {
     this.handle.focus();
   }
 
+  // The two views, by their tab at the top, the tab key, or n (choose) and a (agents).
+  show(view, cx) {
+    if (view === "pick") return this.openPick(cx);
+    if (this.adding) this.closeSourceInput();
+    this.view = "rows";
+    this.handle.focus();
+  }
+
+  tabs(t) {
+    const n = this.rows.length + this.starting.length;
+    const tab = (view, label) => div().id(`pipeline-tab-${view}`).px(10).py(3).rounded(6).text_size(14).cursor_pointer()
+      .when(this.view === view, (el) => el.bg(t.selected).text_color(t.foreground).font_semibold())
+      .when(this.view !== view, (el) => el.text_color(t.muted).hover((s) => s.bg(t.hover)))
+      .on_click((_e, cx) => { cx.stop_propagation(); this.show(view, cx); cx.notify(); })
+      .child(label);
+    return h_flex().gap(6).items_center()
+      .child(tab("rows", n ? `Agents · ${n}` : "Agents"))
+      .child(tab("pick", "Choisir des tickets"))
+      .child(div().pl(6).text_size(11).text_color(t.dim).child("tab"));
+  }
+
   // Leaving the choice: to the agents when some run, else out.
   back() {
     if (this.adding && this.pick?.from?.named.length) return this.closeSourceInput();
@@ -258,6 +279,7 @@ export default class Pipeline extends View {
     const rows = this.pick.tickets ?? [];
     if (e.key === "escape") this.back();
     else if (this.adding) return; // typing a source: space and ↵ are the field's
+    else if (e.key === "tab" || e.key === "a") this.show("rows", cx);
     else if ((e.key === "down" || e.key === "up") && rows.length) { this.at = (this.at + (e.key === "down" ? 1 : rows.length - 1)) % rows.length; this.scroll.scroll_to_item(this.at); }
     else if (e.key === "space") this.tick(rows[this.at]);
     else if (e.key === "enter") this.launch(cx);
@@ -269,7 +291,7 @@ export default class Pipeline extends View {
   key(e, cx) {
     if (this.view === "pick") return this.pickKey(e, cx);
     if (e.key === "escape") return this.close();
-    if (e.key === "n") { this.openPick(cx); cx.stop_propagation(); return cx.notify(); }
+    if (e.key === "n" || e.key === "tab") { this.openPick(cx); cx.stop_propagation(); return cx.notify(); }
     const row = this.selected();
     if (!row) return;
     const at = this.rows.indexOf(row);
@@ -288,6 +310,7 @@ export default class Pipeline extends View {
     const p = this.pick;
     const rows = p.tickets ?? [];
     const n = this.checked.size;
+    const taken = rows.filter((r) => this.checked.has(r.id) && r.who && !r.mine).length; // someone else's, taken over
     const row = (r, i) => {
       const no = this.refused(r);
       const ticked = this.checked.has(r.id);
@@ -296,7 +319,7 @@ export default class Pipeline extends View {
         .child(h_flex().size(15).flex_none().rounded(4).border(1).border_color(ticked ? t.accent : no || !p.known ? t.border : t.input).when(ticked, (b) => b.bg(t.accent)).items_center().justify_center().text_size(10).text_color(t.accent_foreground).child(ticked ? "✓" : ""))
         .child(div().w(90).flex_none().truncate().text_color(no ? t.dim : t.done).child(r.key))
         .child(div().flex_1().min_w(0).truncate().text_color(no ? t.dim : t.foreground).child(r.title))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(no || `${r.mine ? "toi" : "non assigné"} · ${r.status}`));
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(no || `${r.mine ? "toi" : r.who ?? "non assigné"} · ${r.status}`));
     };
     const named = p.from?.named ?? [];
     const said = p.loading ? "Chargement…" : p.error ? p.error : !named.length ? " " : !rows.length ? (p.notes.length ? " " : "Aucun ticket ouvert.") : "";
@@ -332,19 +355,19 @@ export default class Pipeline extends View {
       .p(20)
       .text_size(14)
       .child(h_flex().justify_between().items_center()
-        .child(div().text_size(16).font_semibold().text_color(t.foreground).child(p.from ? `Lancer des agents · ${p.from.repo.name}` : "Lancer des agents"))
+        .child(this.tabs(t))
         .child(div().text_size(12).text_color(t.dim).child("esc")))
-      .child(div().pt(6).pb(10).text_size(13).text_color(t.muted).child("Chaque ticket coché reçoit un agent qui va seul jusqu'à la PR. Un ticket déjà commencé ou pris par quelqu'un se fait à la main."))
+      .child(div().pt(6).pb(10).text_size(13).text_color(t.muted).child(`${p.from ? `Dépôt ${p.from.repo.name}. ` : ""}Chaque ticket coché reçoit un agent qui va seul jusqu'à la PR. Seuls les tickets encore à faire sont listés ; celui de quelqu'un d'autre lui est repris si tu le coches.`))
       .when(Boolean(p.from), (el) => el.child(sources()))
       .when(Boolean(said), (el) => el.child(div().flex_1().text_color(p.error ? t.blocked : t.dim).child(said)))
       .when(!said, (el) => el.child(v_flex().flex_1().min_h(0).relative()
-        .child(v_virtual_list("pipeline-pick", rows.length, 30, (i) => rows[i].id, (range) => rows.slice(range.start, range.end).map((r, i) => row(r, range.start + i))).track_scroll(this.scroll).on_item_click((id, cx) => { this.at = Math.max(0, rows.findIndex((r) => r.id === id)); this.tick(rows[this.at]); cx.notify(); }).size_full())
+        .child(v_virtual_list("pipeline-pick", rows.length, 30, (i) => rows[i].id, (range) => rows.slice(range.start, range.end).map((r, i) => row(r, range.start + i))).track_scroll(this.scroll).on_item_click((id, cx) => { this.at = Math.max(0, rows.findIndex((r) => r.id === id)); this.tick(rows[this.at]); this.handle.focus(); cx.notify(); }).size_full())
         .child(Scrollbar.vertical("pipeline-pick").absolute().inset_0())))
       .children((p.notes ?? []).map((line) => div().pt(4).text_size(11).text_color(t.dim).child(line)))
       .when(p.known === false, (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child("Les branches ou les PR du dépôt n'ont pas pu être lues (git fetch, gh pr list ; GitHub n'a pas répondu ?) : impossible de savoir quels tickets sont déjà commencés, aucun agent ne peut être lancé. Ferme et rouvre le dialogue pour réessayer.")))
       .children(this.report.map((line) => div().pt(4).text_size(12).text_color(t.blocked).child(line)))
       .child(h_flex().pt(14).gap(12).items_center()
-        .child(div().flex_1().text_size(12).text_color(t.dim).child(this.busy ? "lancement des agents…" : n ? `${n} coché${n > 1 ? "s" : ""} : assigné${n > 1 ? "s" : ""} à toi, passé${n > 1 ? "s" : ""} « ${p.from.startStatus} », un Claude en mode auto chacun` : "↑↓ choisir · espace cocher"))
+        .child(div().flex_1().text_size(12).text_color(t.dim).child(this.busy ? "lancement des agents…" : n ? `${n} coché${n > 1 ? "s" : ""} : assigné${n > 1 ? "s" : ""} à toi, passé${n > 1 ? "s" : ""} « ${p.from.startStatus} », un Claude en mode auto chacun${taken ? ` · ${taken} repris à quelqu'un` : ""}` : "↑↓ choisir · espace cocher · a agents"))
         .child(button("pipeline-back", this.rows.length || this.starting.length ? "Voir les agents" : "Fermer", "esc", false, (cx) => { this.back(); cx.notify(); }))
         .when(n > 0 && !this.busy, (el) => el.child(button("pipeline-launch", `Lancer ${n} agent${n > 1 ? "s" : ""}`, "↵", true, (cx) => this.launch(cx)))));
   }
@@ -398,7 +421,7 @@ export default class Pipeline extends View {
         ? ["Question posée à l'auteur du ticket, en commentaire Jira", "Le ticket est en attente. Si tu connais la réponse, écris-la dans le terminal de l'agent ; sinon « Reprendre » lui dit de relire le ticket quand l'auteur a répondu."]
         : row.state === "ready"
           ? ["Terminé", row.questions ? `La PR est ouverte, avec ${row.questions} question${row.questions > 1 ? "s" : ""} dans sa section « Hypothèses et questions ».` : "La PR est ouverte, sans question en attente."]
-          : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (row.state === "look" ? "Il s'est arrêté sans avoir fini : ouvre son terminal pour voir pourquoi." : "…")];
+          : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (row.state === "look" ? "À l'arrêt sans avoir fini. Il attend peut-être une commande lancée en arrière-plan (build, CI) et reprendra seul ; sinon ouvre son terminal." : "…")];
       return [
         div().text_size(15).font_semibold().text_color(t.foreground).child(`${row.key} · ${row.title}`),
         div().text_size(12).text_color(t.muted).child(row.branch),
@@ -416,7 +439,6 @@ export default class Pipeline extends View {
       ];
     };
 
-    const count = this.rows.length;
     const empty = this.error || (!this.loaded ? "Chargement…" : this.starting.length ? "Démarrage des agents…" : "Aucun ticket en cours. n pour en lancer.");
     return v_flex()
       .id("pipeline-dialog")
@@ -427,7 +449,7 @@ export default class Pipeline extends View {
       .p(20)
       .text_size(14)
       .child(h_flex().justify_between().items_center()
-        .child(div().text_size(16).font_semibold().text_color(t.foreground).child(count ? `Pipeline · ${count} ticket${count > 1 ? "s" : ""}` : "Pipeline"))
+        .child(this.tabs(t))
         .child(div().text_size(12).text_color(t.dim).child("esc")))
       .child(div().pt(6).pb(14).text_size(13).text_color(t.muted).child(summary(this.rows) || " "))
       .when(!sel, (el) => el.child(div().flex_1().text_color(this.error ? t.blocked : t.dim).child(empty)))
