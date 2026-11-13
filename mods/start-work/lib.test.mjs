@@ -1,6 +1,6 @@
 // node mods/start-work/lib.test.mjs
 import assert from "node:assert/strict";
-import { slug, branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn } from "./lib.js";
+import { slug, branchFor, existingWork, ticketSource, ticketQueries, sourceLabel, spaceIn, argvFor } from "./lib.js";
 
 assert.equal(slug("🐛 Data comparison fails on a column présent"), "data-comparison-fails-on-a-column-present");
 assert.equal(slug("x".repeat(30) + " " + "y".repeat(30)), "x".repeat(30));
@@ -43,4 +43,7 @@ assert.equal(spaceIn(M, [M], [{ tab: "tM", cwd: `${M}/src` }], [sp("main", "/h",
 assert.deepEqual(spaceIn("/h/wt", [], [{ tab: "tW", cwd: "/h" }], [sp("wt", "/h/wt", "tW")]), { space: sp("wt", "/h/wt", "tW"), tab: null });
 // a space whose folder is the checkout loses to the one with a terminal in it (data-delta, PR 275)
 assert.equal(spaceIn(M, [M], [{ tab: "t5", cwd: M }], [sp("cerner-flow", M, "t11"), sp("data-delta", "/h", "t5")]).space.id, "data-delta");
+// A PR's branch is someone else's: Claude starts without the repo's .claude/ and .mcp.json.
+assert.deepEqual(argvFor({ kind: "pr", number: 1 }), ["claude", "--setting-sources", "user", "--strict-mcp-config"]);
+assert.deepEqual(argvFor({ kind: "jira", key: "POSO-1" }), ["claude"]);
 console.log("ok");
