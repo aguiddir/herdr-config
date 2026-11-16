@@ -134,7 +134,7 @@ Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. He
 
 Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans son premier message : lire le ticket, coder en suivant les conventions de commit du dépôt, faire relire, corriger (deux passes au plus), ouvrir la PR en brouillon (c'est moi qui la passe « ready for review »), attendre sa CI et la corriger si elle casse par sa faute (deux fois au plus), commenter le ticket. Il lance lui-même le **relecteur** avec herdr-core (`hc run reviewer …`, le rôle de `hc-templates/reviewer.md`) : un autre Claude, au contexte neuf, dans son propre terminal, qui relit avec `/review high`. Le relecteur écrit son rapport dans le dossier git du worktree (`git rev-parse --git-path pipeline-review.md`), donc hors de l'arbre de travail : il ne peut pas finir dans un commit. Le codeur le lit puis le supprime : le mode auto de Claude refuse qu'un agent écrive dans le terminal d'un autre.
 
-À gauche, un ticket par ligne, avec deux cases (code, review) et son état :
+À gauche, un ticket par ligne, avec son dépôt, deux cases (code, review) et son état :
 
 | État | Ce que ça veut dire |
 |---|---|
