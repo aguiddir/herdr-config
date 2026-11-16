@@ -399,8 +399,8 @@ export default class Pipeline extends View {
       .when(row !== sel, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { this.sel = row.key; this.agent = "coder"; cx.notify(); })
       .child(h_flex().justify_between().items_center().gap(8)
-        .child(div().text_color(t.done).child(row.key))
-        .child(h_flex().gap(8).items_center().text_size(12).text_color(tone[row.state]).child(row.label).child(pair(row))))
+        .child(h_flex().gap(8).items_baseline().min_w(0).child(div().text_color(t.done).child(row.key)).child(div().text_size(11.5).text_color(t.dim).truncate().child(row.repo ?? ""))) // several repos share the list
+        .child(h_flex().gap(8).items_center().flex_none().text_size(12).text_color(tone[row.state]).child(row.label).child(pair(row))))
       .child(div().text_size(12.5).text_color(row === sel ? t.foreground : t.muted).truncate().child(row.title));
 
     // One box of the chain: an agent (a terminal, maybe not started) or the pull request.
@@ -427,7 +427,7 @@ export default class Pipeline extends View {
           : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (!row.coder.status ? "Son agent ne tourne plus (machine redémarrée ?) et il n'avait pas fini. Ouvre son terminal et tape `claude --continue` pour qu'il reprenne." : row.state === "look" ? "À l'arrêt sans avoir fini. Il attend peut-être une commande lancée en arrière-plan (build, CI) et reprendra seul ; sinon ouvre son terminal." : "…")];
       return [
         div().text_size(15).font_semibold().text_color(t.foreground).child(`${row.key} · ${row.title}`),
-        div().text_size(12).text_color(t.muted).child(row.branch),
+        div().text_size(12).text_color(t.muted).child(row.repo ? `${row.repo} · ${row.branch}` : row.branch),
         h_flex().items_center().pt(10)
           .child(box("Agent 1", "Code", ...saidOf(row.coder, row, true), active === row.coder))
           .child(arrow())
