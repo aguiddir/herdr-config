@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What the mods here need on this machine: gh for start-work, clean-merged and pr-inbox,
-# acli for start-work, herdr-core's reviewer role for the pipeline. Installs acli (no sudo),
+# acli for start-work, plannotator-tui and jq for annotate, herdr-core's reviewer role for the pipeline. Installs acli (no sudo),
 # logs gh and acli in when they aren't, copies the roles, and checks each mod. Safe to re-run.
 set -euo pipefail
 home=$(cd "$(dirname "$0")" && pwd)
@@ -44,6 +44,14 @@ if command -v acli >/dev/null; then
     acli jira auth login --web && ok "acli connecté à Jira" || ko "acli n'est pas connecté : acli jira auth login --web"
   fi
 fi
+
+# plannotator-tui, for bin/annotate.sh: on the PATH, or the one the classic Herdr plugin ships.
+if command -v plannotator-tui >/dev/null || ls "$HOME"/.config/herdr/plugins/github/annotate-*/bin/plannotator-tui.exe >/dev/null 2>&1; then
+  ok plannotator-tui
+else
+  ko "plannotator-tui manque (annotate) : cargo install plannotator-tui"
+fi
+command -v jq >/dev/null && ok jq || ko "jq manque (annotate) : sudo apt install jq"
 
 # herdr-core roles (hc run <name> "<task>"): the reviewer the pipeline's coder starts.
 # A role edited by hand is left alone and said, never overwritten.

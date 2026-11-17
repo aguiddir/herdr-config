@@ -13,6 +13,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `layouts/mine.json` | mon layout : `main` plus le tiroir des PR |
 | `mods/pipeline/` | lancer des agents sur des tickets Jira et voir où ils en sont : codeur, relecteur, PR (`ctrl-shift-a`) |
 | `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
+| `bin/annotate.sh` | relire du Markdown ou la dernière réponse d'un agent dans plannotator-tui, et lui envoyer les notes (`ctrl-shift-r`, `ctrl-shift-y`) |
 
 ## start-work
 
@@ -179,3 +180,14 @@ Puis ajouter le raccourci dans la section `global` de `~/.config/herdr-app/keys.
 Le premier lancement dans un repo, l'onglet Jira demande où sont ses tickets (voir plus haut).
 
 Pour mettre à jour : `git -C ~/herdr-config pull`, puis refaire le `cp`. Il remplace `config.json` : les sources de tickets données dans l'onglet Jira seront à redonner.
+
+## annotate
+
+Le plugin [Herdr Annotate](https://plannotator.ai/tui-annotate/) ne vit que dans le Herdr classique. `bin/annotate.sh` en reprend la review de documents avec [plannotator-tui](https://github.com/plannotator/plannotator-tui), dans un volet à droite du terminal :
+
+- `ctrl-shift-r` ouvre le dossier du terminal : on choisit un fichier Markdown et on l'annote ;
+- `ctrl-shift-y` ouvre la dernière réponse de l'agent.
+
+En quittant (`q`), les notes partent comme prochain message de l'agent de l'onglet : celui qui avait le focus en dernier, sinon le premier. Sans nouvelle note, rien n'est envoyé. Si les notes d'un fichier ont changé, elles sont toutes renvoyées, les anciennes comprises : « Finish review » dans le menu `m` les archive.
+
+La review de plan à la sortie du mode plan, la review de code et l'Inbox de Plannotator restent dans le navigateur.
