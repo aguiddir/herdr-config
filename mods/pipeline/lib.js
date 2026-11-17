@@ -1,9 +1,10 @@
 // Pure helpers of the pipeline dialog: where each ticket's agents stand, then which tickets
 // may get a coder and what it is told. Checked by lib.test.mjs.
 // Once launched, nothing drives a coder. launch.js keeps the tickets it gave one in
-// shared("pipeline.tickets"): { key, title, repo, branch, path, at }, by key. herdr-core has
-// the terminals: { address, cwd, status, labels, parent } here, status one of
-// "working" | "blocked" | "done" | "idle", or null for a program that reports none (a shell).
+// shared("pipeline.tickets"): { key, title, repo, branch, path, session, at }, by key. herdr-core has
+// the terminals: { address, cwd, status, labels, parent, agent } here, status one of
+// "working" | "blocked" | "done" | "idle", or null for a program that reports none (a shell);
+// agent the program it knows ("claude-code", "bash"), or null for any other.
 // A coder says its stage itself: `hc label $HC_TERMINAL_ID pipeline.stage=…`.
 
 const STAGES = ["code", "review", "fix", "ci", "question", "ready"];
@@ -171,7 +172,30 @@ export const sourceLabel = (source) => (source.kind === "project" ? source.key :
 export const flat = (s) => String(s ?? "").replace(/[\r\n\t\p{Cc}]+/gu, " ").replace(/ {2,}/g, " ").trim();
 
 // A coder asks for nothing on the way: Claude's auto mode decides each action itself.
-export const coderArgv = () => ["claude", "--permission-mode", "auto"];
+// session: its conversation's id, chosen at launch so that a restart resumes this one. Not
+// `claude --continue`: the reviewer works in the same folder, its conversation may be the latest.
+export const coderArgv = (session) => ["claude", "--permission-mode", "auto", ...(session ? ["--session-id", session] : [])];
+
+// What tells a coder whose ticket's author answered to go on, typed in its terminal.
+export const RESUME = "L'auteur a répondu sur le ticket : relis-le, repasse `hc label $HC_TERMINAL_ID pipeline.stage=code`, et reprends.";
+
+// A coder whose terminal is a shell (after a restart of the machine herdr-core gives it one)
+// and that had not finished. A shell, not a null status: a Claude starting or showing a dialog
+// has none either, and the line typed would reach it as a prompt. Only one launched with its
+// own session id: an older one's conversation is found by hand. The path goes in single quotes
+// typed in a shell, where fish still reads \' and \\.
+const SHELLS = ["bash", "zsh", "fish", "nu", "sh"];
+export const restartable = (row) => SHELLS.includes(row.coder.agent) && row.state !== "ready" && Boolean(row.session) && !/['\\]/.test(row.path);
+
+// The line typed in that shell: Claude again, on the coder's own conversation, told why and
+// where it was. Its message goes in single quotes, which every shell takes as is (bash, zsh,
+// fish, nu) but for fish's \' and \\: its apostrophes become typographic ones, and it has no
+// backslash. A relaunch knows nothing of an answer: at a question it looks before going on.
+export function restartCommand(row) {
+  const review = `review-${row.key.toLowerCase()}`;
+  const said = `La machine a redémarré et t'a coupé avant la fin, à l'étape « ${row.stage} ». Reprends ta marche à suivre à cette étape. Regarde d'abord où en est le travail (git status, git log, la PR et sa CI si elle existe) et ne refais pas ce qui est fait. Si tu en étais à la relecture et que ton relecteur ne tourne plus (\`hc get ${review} --json\`), relance-le comme à l'étape 4 : son ancien terminal est fermé.${row.stage === "question" ? " Tu attendais la réponse de l'auteur à ta question : relis le ticket (`acli jira workitem view " + row.key + "`). S'il a répondu, repasse `hc label $HC_TERMINAL_ID pipeline.stage=code` et reprends ; sinon, ne fais rien d'autre et arrête-toi, toujours à l'étape `question`." : ""}`;
+  return `cd '${row.path}'; ${[...coderArgv(), "--resume", row.session].join(" ")} '${said.replace(/'/g, "’")}'`;
+}
 
 // The coder's first message: the whole sequence, since nothing drives it afterwards.
 // It reports its stage with one herdr-core label (the pipeline mod reads it), starts its
