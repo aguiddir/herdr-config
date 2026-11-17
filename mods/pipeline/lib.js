@@ -72,6 +72,38 @@ export function summary(rows) {
   return parts.filter(([c]) => c).map(([c, say]) => say(c)).join(" · ");
 }
 
+// ---- A ticket's pull request, from `gh pr view <branch> --json number,url,isDraft,statusCheckRollup`.
+// checkState and ci are copied from mods/pr-inbox/lib.js (no imports across mods). ----
+
+// The coder opens its PR just before it says "ci": no PR to look for before.
+export const hasPr = (row) => row.stage === "ci" || row.state === "ready";
+
+// A check run (status, conclusion) or a commit status (state): "ok" | "run" | "ko".
+const checkState = (c) =>
+  "state" in c ? (c.state === "SUCCESS" ? "ok" : c.state === "PENDING" || c.state === "EXPECTED" ? "run" : "ko")
+  : c.status !== "COMPLETED" ? "run"
+  : ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(c.conclusion) ? "ok" : "ko";
+
+// The whole CI: red if one check is, running while one runs, green else; null without checks.
+export function ci(rollup) {
+  if (!rollup?.length) return null;
+  const all = rollup.map(checkState);
+  return all.includes("ko") ? "ko" : all.includes("run") ? "run" : "ok";
+}
+
+const duration = (ms) => {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+};
+
+// One line per check: its name, its state, how long it took once it ran (gh gives an unfinished
+// one year 1 as its end).
+export const checksOf = (rollup) => (rollup ?? []).map((c) => {
+  const state = checkState(c);
+  const ms = Date.parse(c.completedAt) - Date.parse(c.startedAt);
+  return { name: c.name || c.context || "?", state, took: state === "run" ? "en cours" : ms > 0 ? duration(ms) : "" };
+});
+
 // ---- Choosing tickets and wording their coder's task. slug, branchFor, existingWork,
 // ticketSource, ticketQueries and sourceLabel are copied from mods/start-work/lib.js, Jira
 // only: Herdr refuses imports across mods, and start-work stays the place for work done by

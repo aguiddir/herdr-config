@@ -11,13 +11,14 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { run, props, closeOverlay, theme, exec, shared, focused, home } from "herdr";
-import { under, rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose, boardLink, RESUME, restartable, restartCommand } from "./lib.js";
+import { run, props, closeOverlay, theme, exec, shared, focused, home, window } from "herdr";
+import { under, rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose, boardLink, RESUME, restartable, restartCommand, hasPr, ci, checksOf } from "./lib.js";
 import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, filtersOfBoard, start } from "./launch.js";
 
 const EVERY = 5000;
 const YOUNG = 120000; // a ticket just launched has no agent yet: not forgotten before this
 const RELAUNCH = 30000; // a relaunched coder still without a status after this: its Claude didn't start
+const PR_EVERY = 60000; // a ticket's PR and CI, read again: gh at every pass would eat GitHub's quota
 
 async function hc(args) {
   const r = await exec("hc", args);
@@ -42,6 +43,7 @@ export default class Pipeline extends View {
     this.rows = [];
     this.starting = []; // keys launched whose coder doesn't report yet (or waits on a dialog of Claude's)
     this.restarting = new Map(); // key -> when its coder was relaunched: shown, and ↵ waits for it
+    this.prs = {}; // by key: { at, pr: { number, url, draft, ci, checks } } once gh found it
     this.sel = null; // the chosen ticket's key
     this.agent = "coder"; // or "reviewer"
     this.reading = false; // a pass is on: the next one waits its turn
@@ -88,6 +90,7 @@ export default class Pipeline extends View {
         const terms = await terminalsIn(Object.values(tickets).map((t) => t.path));
         this.rows = rowsOf(tickets, terms);
         for (const r of this.rows) if (r.coder.status || Date.now() - this.restarting.get(r.key) > RELAUNCH) this.restarting.delete(r.key);
+        this.readPrs(cx);
         const noCoder = gone(tickets, terms);
         const alive = (key) => terms.some((t) => under(t.cwd, tickets[key].path));
         const young = (key) => Date.now() - Date.parse(tickets[key].at) <= YOUNG;
@@ -100,6 +103,38 @@ export default class Pipeline extends View {
       this.reading = false;
       this.loaded = true;
       cx.notify();
+    });
+  }
+
+  // The PR of each ticket that has one, with its CI, at most once a minute a ticket. One found
+  // before stays read: a coder sent back to code still pushes to it, and its CI moves.
+  readPrs(cx) {
+    for (const r of this.rows.filter((r) => hasPr(r) || this.prs[r.key]?.pr)) {
+      const had = this.prs[r.key];
+      if (had && Date.now() - had.at < PR_EVERY) continue;
+      this.prs[r.key] = { ...had, at: Date.now() };
+      cx.spawn(async (cx) => {
+        try {
+          const res = await exec("gh", ["pr", "view", r.branch, "--json", "number,url,isDraft,statusCheckRollup"], { cwd: r.path });
+          if (res.code !== 0) return; // no PR yet, or GitHub not answering: what is shown stays, read again in a minute
+          const p = JSON.parse(res.stdout);
+          this.prs[r.key] = { at: Date.now(), pr: { number: p.number, url: p.url, draft: p.isDraft, ci: ci(p.statusCheckRollup), checks: checksOf(p.statusCheckRollup) } };
+          cx.notify();
+        } catch { /* gh missing or its answer unreadable: the same */ }
+      });
+    }
+  }
+
+  prOf(row) {
+    return this.prs[row.key]?.pr ?? null;
+  }
+
+  openPr(row, cx) {
+    const pr = this.prOf(row);
+    if (!pr) return;
+    cx.spawn(async (cx) => {
+      try { await exec(window().platform === "macos" ? "open" : "xdg-open", [pr.url]); }
+      catch (e) { this.error = String(e.message ?? e); cx.notify(); } // no opener on this machine
     });
   }
 
@@ -342,6 +377,7 @@ export default class Pipeline extends View {
     else if (e.key === "right") this.agent = "reviewer";
     else if (e.key === "enter") this.go(row, cx);
     else if (e.key === "o") this.open(row);
+    else if (e.key === "p") this.openPr(row, cx);
     else return;
     cx.stop_propagation();
     cx.notify();
@@ -423,15 +459,23 @@ export default class Pipeline extends View {
         .child(label)
         .child(div().text_size(10.5).font_normal().opacity(0.6).child(key));
     if (this.view === "pick") return this.renderPick(t, button);
+    // A PR's CI: its mark in the list, its words in the PR's box, its color for both.
+    const CI = { ok: ["✓", "CI ✓ verte", t.done], run: ["…", "CI en cours", t.working], ko: ["✗", "CI ✗ rouge", t.ansi1] };
+    const chip = (pr) => {
+      const [mark, , color] = CI[pr.ci];
+      return div().px(6).rounded(8).border(1).border_color(color).text_size(11).text_color(color).child(`CI ${mark}`);
+    };
 
     const line = (row) => v_flex().id(`pl-${row.key}`).px(12).py(8).gap(3).rounded(6).cursor_pointer()
       .when(row === sel, (el) => el.bg(t.selected))
       .when(row !== sel, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { this.sel = row.key; this.agent = "coder"; cx.notify(); })
       .child(h_flex().justify_between().items_center().gap(8)
-        .child(h_flex().gap(8).items_baseline().min_w(0).child(div().text_color(t.done).child(row.key)).child(div().text_size(11.5).text_color(t.dim).truncate().child(row.repo ?? ""))) // several repos share the list
+        .child(h_flex().gap(8).items_baseline().min_w(0).child(div().flex_none().text_color(t.done).child(row.key)).child(div().text_size(11.5).text_color(t.dim).truncate().child(row.repo ?? ""))) // several repos share the list
         .child(h_flex().gap(8).items_center().flex_none().text_size(12).text_color(tone[row.state]).child(row.label).child(pair(row))))
-      .child(div().text_size(12.5).text_color(row === sel ? t.foreground : t.muted).truncate().child(row.title));
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).text_size(12.5).text_color(row === sel ? t.foreground : t.muted).truncate().child(row.title))
+        .when(Boolean(this.prOf(row)?.ci), (el) => el.child(div().flex_none().child(chip(this.prOf(row))))));
 
     // One box of the chain: an agent (a terminal, maybe not started) or the pull request.
     const box = (name, role, said, color, on, width = 190) => v_flex().w(width).h(104).p(12).gap(6).rounded(8).border(on ? 2 : 1).border_color(on ? t.accent : t.border)
@@ -440,6 +484,30 @@ export default class Pipeline extends View {
       .child(div().flex_1())
       .child(div().text_size(12.5).text_color(color).child(said));
     const arrow = () => div().px(8).text_color(t.dim).child("→");
+    // The PR once gh found it: a click opens it on GitHub, its border says its CI.
+    const prBox = (row) => {
+      const pr = this.prOf(row);
+      if (!pr) return box("Sortie", "PR", row.state === "ready" ? "ouverte" : "à ouvrir", row.state === "ready" ? t.done : t.dim, false, 96);
+      const [, said, color] = CI[pr.ci] ?? [, "pas de CI", t.dim];
+      return v_flex().id("pipeline-pr").w(170).h(104).p(12).gap(6).rounded(8).border(1).border_color(pr.ci ? color : t.border).bg(t.raised).cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.openPr(row, cx); })
+        .child(h_flex().justify_between().text_size(12).text_color(t.muted).child("Sortie").child(div().text_color(t.accent).child("GitHub ↗")))
+        .child(h_flex().gap(4).items_baseline().font_semibold().text_color(t.foreground).child("PR").child(div().text_color(t.accent).child(`#${pr.number}`))
+          .when(pr.draft, (el) => el.child(div().font_normal().text_size(12).text_color(t.dim).child("brouillon"))))
+        .child(div().flex_1())
+        .child(div().text_size(12.5).text_color(color).child(said));
+    };
+    // Each check of the PR, under the chain: which one is red without opening GitHub.
+    const checks = (row) => {
+      const list = this.prOf(row)?.checks ?? [];
+      return v_flex().id("pipeline-checks").pt(8).gap(4).max_h(150).overflow_y_scrollbar()
+        .child(div().text_size(12).text_color(t.muted).child("Checks de la PR"))
+        .children(list.map((c) => h_flex().gap(8).items_center().text_size(12.5)
+          .child(div().w(14).text_color(CI[c.state][2]).child(CI[c.state][0]))
+          .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.name))
+          .child(div().text_color(t.dim).child(c.took))));
+    };
     const saidOf = (term, row, mine) => {
       if (!term) return ["pas encore lancé", t.dim];
       if (term.status === "working") return ["en cours", t.working];
@@ -467,8 +535,9 @@ export default class Pipeline extends View {
           .child(arrow())
           .child(box(row.reviewer ? "Agent 2 · lancé par l'agent 1" : "Agent 2", "Review", ...saidOf(row.reviewer, row, false), active === row.reviewer))
           .child(arrow())
-          .child(box("Sortie", "PR", row.state === "ready" ? "ouverte" : "à ouvrir", row.state === "ready" ? t.done : t.dim, false, 96)),
+          .child(prBox(row)),
         div().text_size(12).text_color(t.dim).child("↺ si la review laisse des remarques, retour au code · 2 passes au plus"),
+        ...(this.prOf(row)?.checks.length ? [checks(row)] : []),
         div().flex_1(),
         v_flex().p(12).gap(4).rounded(8).bg(t.raised)
           .child(div().text_size(12).text_color(tone[row.state]).child(doing[0]))
@@ -486,9 +555,10 @@ export default class Pipeline extends View {
       .when(this.starting.length > 0, (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child(`Lancé${this.starting.length > 1 ? "s" : ""} sans agent visible : ${this.starting.join(", ")}. Claude attend peut-être une réponse dans son terminal.`)))
       .when(Boolean(sel && this.error), (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child(this.error)))
       .child(h_flex().pt(14).gap(12).items_center()
-        .child(div().text_size(12).text_color(t.dim).child(!sel ? "" : this.action(sel) !== "open" ? "↑↓ ticket · o ouvrir le terminal" : "↑↓ ticket · ←→ agent"))
+        .child(div().text_size(12).text_color(t.dim).child(!sel ? "" : (this.action(sel) !== "open" ? "↑↓ ticket · o ouvrir le terminal" : "↑↓ ticket · ←→ agent") + (this.prOf(sel) ? " · p PR sur GitHub" : "")))
         .child(div().flex_1())
         .child(button("pipeline-close", "Fermer", "esc", false, () => this.close()))
+        .when(Boolean(sel && this.prOf(sel)), (el) => el.child(button("pipeline-pr-open", "Ouvrir la PR", "p", false, (cx) => this.openPr(sel, cx))))
         .child(button("pipeline-new", "Choisir des tickets", "n", !sel, (cx) => { this.openPick(cx); cx.notify(); }))
         .when(Boolean(sel), (el) => el.child(button("pipeline-go", { restart: "Relancer l'agent code", resume: "Reprendre avec la réponse Jira" }[this.action(sel)] ?? (this.chosen(sel) === sel.coder ? "Ouvrir l'agent code" : "Ouvrir l'agent review"), "↵", true, (cx) => this.go(sel, cx)))));
   }

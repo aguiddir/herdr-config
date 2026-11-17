@@ -1,6 +1,6 @@
 // node mods/pipeline/lib.test.mjs
 import assert from "node:assert/strict";
-import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, boardLink, boardFilters, coderArgv, coderTask, flat, restartable, restartCommand } from "./lib.js";
+import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, boardLink, boardFilters, coderArgv, coderTask, flat, restartable, restartCommand, hasPr, ci, checksOf } from "./lib.js";
 
 const T = (address, cwd, status, labels = {}, parent = null) => ({ address, cwd, status, labels, parent, name: null });
 const tickets = {
@@ -162,4 +162,22 @@ assert.doesNotMatch(ct, /\{[a-zA-Z]+\}/); // no placeholder left unfilled
 assert.match(ct, /hc read review-poso-118/);
 assert.match(ct, /Après trois attentes sans rapport/);
 assert.match(ct, /repasse `hc label \$HC_TERMINAL_ID pipeline\.stage=code`/);
+// The PR is looked for once the coder says it opened it.
+assert.equal(hasPr({ stage: "ci", state: "running" }), true);
+assert.equal(hasPr({ stage: "code", state: "ready" }), true);
+assert.equal(hasPr({ stage: "fix", state: "running" }), false);
+// Its CI: red wins over running, running over green; no check, no CI.
+const run = (name, status, conclusion, startedAt = "2026-11-17T10:00:00Z", completedAt = "2026-11-17T10:01:05Z") => ({ name, status, conclusion, startedAt, completedAt });
+assert.equal(ci([]), null);
+assert.equal(ci(undefined), null);
+assert.equal(ci([run("a", "COMPLETED", "SUCCESS"), run("b", "COMPLETED", "SKIPPED")]), "ok");
+assert.equal(ci([run("a", "COMPLETED", "SUCCESS"), run("b", "IN_PROGRESS", "")]), "run");
+assert.equal(ci([run("a", "COMPLETED", "FAILURE"), run("b", "IN_PROGRESS", "")]), "ko");
+assert.equal(ci([{ context: "jenkins", state: "PENDING" }]), "run");
+assert.deepEqual(checksOf([run("build", "COMPLETED", "SUCCESS"), run("lint", "COMPLETED", "FAILURE", "2026-11-17T10:00:00Z", "2026-11-17T10:00:12Z"), run("test", "IN_PROGRESS", "", "2026-11-17T10:00:00Z", "0001-01-01T00:00:00Z"), { context: "jenkins", state: "SUCCESS" }]), [
+  { name: "build", state: "ok", took: "1 min 05 s" },
+  { name: "lint", state: "ko", took: "12 s" },
+  { name: "test", state: "run", took: "en cours" },
+  { name: "jenkins", state: "ok", took: "" },
+]);
 console.log("ok");
