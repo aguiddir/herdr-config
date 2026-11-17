@@ -140,11 +140,12 @@ Un ticket a deux agents. Le **codeur** reçoit toute la marche à suivre dans so
 |---|---|
 | `code`, `review`, `code, 2ᵉ passe`, `CI` | un agent travaille ; le codeur dit son étape lui-même (`hc label … pipeline.stage=…`) |
 | `question` | le ticket ne disait pas quoi construire, ou l'hypothèse aurait été irréversible : la question est en commentaire Jira |
-| `à voir` | le codeur est à l'arrêt ailleurs qu'à une question ou à la fin ; il attend peut-être une commande en arrière-plan (build, CI) et reprendra seul. Ou la machine a redémarré avant qu'il finisse : son terminal n'a plus qu'un shell, `claude --continue` dedans le relance |
+| `à voir` | le codeur est à l'arrêt ailleurs qu'à une question ou à la fin ; il attend peut-être une commande en arrière-plan (build, CI) et reprendra seul. Ou la machine a redémarré avant qu'il finisse : son terminal n'a plus qu'un shell, et `↵` le relance (voir plus bas) |
 | `prête à merger`, `prête · 2 questions` | la PR est ouverte ; chaque question est un commentaire de la PR, les hypothèses sont dans sa description |
 
 - `↑↓` choisit un ticket, `←→` le codeur ou le relecteur, `↵` ouvre son terminal, `esc` ferme ;
 - sur un ticket en `question`, `↵` dit au codeur que l'auteur a répondu sur le ticket, `o` ouvre son terminal ;
+- sur un ticket dont le codeur ne tourne plus et n'avait pas fini (la machine a redémarré : herdr-core a rouvert son terminal avec un shell), `↵` le **relance** : il tape dans ce shell `claude --resume <sa conversation> --permission-mode auto` avec un message qui lui dit qu'il a été coupé et de reprendre sa marche à suivre à l'étape de son étiquette, après avoir regardé où en est la branche. Sa conversation est la sienne, pas la plus récente du dossier (qui peut être celle du relecteur) : le pipeline lui donne un identifiant (`--session-id`) au lancement. Un relecteur coupé lui aussi a son terminal fermé, pour que le codeur en relance un sous le même nom s'il en était à la relecture. La ligne repasse à son étape dès que Claude tourne. Rien ne se relance tout seul : seulement sur `↵`. Un ticket lancé avant cette version n'a pas d'identifiant : `claude --resume` dans son terminal, et choisir sa conversation ;
 - un ticket n'est plus affiché quand il n'y a plus de terminal dans son worktree (son espace est fermé).
 
 Les agents ne demandent rien en route : ils tournent en `--permission-mode auto`, prennent l'hypothèse la plus raisonnable et la notent dans la PR. Ils ne mergent pas, ne poussent que sur la branche du ticket et ne déclenchent aucun déploiement ; c'est leur consigne qui le dit, et la protection de la branche principale sur GitHub qui le garantit. Seulement les agents de cette machine.

@@ -1,6 +1,6 @@
 // node mods/pipeline/lib.test.mjs
 import assert from "node:assert/strict";
-import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, boardLink, boardFilters, coderArgv, coderTask, flat } from "./lib.js";
+import { rowsOf, squares, summary, gone, branchFor, whyNot, ticketSource, ticketQueries, sourceLabel, compose, boardLink, boardFilters, coderArgv, coderTask, flat, restartable, restartCommand } from "./lib.js";
 
 const T = (address, cwd, status, labels = {}, parent = null) => ({ address, cwd, status, labels, parent, name: null });
 const tickets = {
@@ -92,6 +92,35 @@ assert.equal(boardLink("labels = X"), null);
 assert.deepEqual(boardFilters([{ id: 3, name: "Table_Ronde_DATADELTA" }, { id: 1, name: "Filtre pour Table_Ronde" }, { id: 2, name: "Filtre pour Table_Ronde 2" }], "Table_Ronde").map((f) => f.id), ["1", "3", "2"]);
 // What a ticket's coder is told.
 assert.deepEqual(coderArgv(), ["claude", "--permission-mode", "auto"]);
+assert.deepEqual(coderArgv("u-1"), ["claude", "--permission-mode", "auto", "--session-id", "u-1"]);
+// A coder cut by a restart of the machine: its terminal is a shell (no status) that kept its labels.
+const cut = (stage, extra = {}, agent = "bash") => rowsOf({ "A-1": { ...tickets["A-1"], session: "u-1", ...extra } }, [{ ...T("t1", "/w/a-1", null, { "pipeline.stage": stage }), agent }])[0];
+assert.equal(cut("review").state, "look");
+assert.ok(restartable(cut("review")));
+assert.ok(restartable(cut("question")));
+assert.ok(!restartable(cut("ready"))); // finished: nothing to relaunch
+assert.ok(!restartable(rowsOf(tickets, [{ ...T("t1", "/w/a-1", null, { "pipeline.stage": "review" }), agent: "bash" }])[0])); // launched without a session id
+assert.ok(!restartable({ ...cut("review"), path: "/w/a'1" })); // typed in quotes in a shell
+assert.ok(!restartable({ ...cut("review"), path: "/w/a\\" })); // fish: \' would not close the quote
+assert.ok(!restartable(cut("review", {}, null))); // no status but no shell either: a Claude starting, a dialog
+assert.ok(!restartable(cut("review", {}, "claude-code")));
+assert.ok(!restartable(rowsOf({ "A-1": { ...tickets["A-1"], session: "u-1" } }, [T("t1", "/w/a-1", "idle", { "pipeline.stage": "review" })])[0])); // Claude still there
+const rc = restartCommand(cut("review"));
+// Its own conversation, never the latest of the folder (the reviewer's may be), in auto mode like the launch.
+assert.match(rc, /^cd '\/w\/a-1'; claude --permission-mode auto --resume u-1 '/);
+assert.doesNotMatch(rc, /--continue/);
+assert.equal(rc.match(/'/g).length, 4); // the path's two quotes and the message's: no apostrophe closes them
+assert.match(rc, /à l’étape « review »/);
+assert.match(rc, /hc get review-a-1/);
+assert.doesNotMatch(rc, /l’auteur a répondu/i);
+// At a question it doesn't know whether the author answered: it looks, and waits on if not.
+const rq = restartCommand(cut("question"));
+assert.doesNotMatch(rq, /l’auteur a répondu/i);
+assert.match(rq, /S’il a répondu, repasse `hc label \$HC_TERMINAL_ID pipeline.stage=code`/);
+assert.match(rq, /sinon, ne fais rien d’autre et arrête-toi/);
+assert.ok(!rq.includes("\\"));
+// Back at work, the row shows its stage again.
+assert.equal(rowsOf({ "A-1": { ...tickets["A-1"], session: "u-1" } }, [T("t1", "/w/a-1", "working", { "pipeline.stage": "review" })])[0].label, "review");
 assert.equal(flat("a\n b\t\u0007c"), "a b c");
 const ct = coderTask({ key: "POSO-118", title: "Exporter\nle `rapport` en \"CSV\"" }, { branch: "feat/poso-118-x", waitingStatus: "En attente" });
 assert.match(ct, /POSO-118/);

@@ -12,12 +12,12 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, shared, focused, home } from "herdr";
-import { under, rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose, boardLink } from "./lib.js";
+import { under, rowsOf, squares, summary, gone, whyNot, ticketSource, sourceLabel, compose, boardLink, RESUME, restartable, restartCommand } from "./lib.js";
 import { TICKETS, sourcesOf, saveSources, ticketsOf, workOf, filtersOfBoard, start } from "./launch.js";
 
 const EVERY = 5000;
 const YOUNG = 120000; // a ticket just launched has no agent yet: not forgotten before this
-const RESUME = "L'auteur a répondu sur le ticket : relis-le, repasse `hc label $HC_TERMINAL_ID pipeline.stage=code`, et reprends.";
+const RELAUNCH = 30000; // a relaunched coder still without a status after this: its Claude didn't start
 
 async function hc(args) {
   const r = await exec("hc", args);
@@ -33,7 +33,7 @@ async function terminalsIn(paths) {
   return Promise.all(near.map(async (t) => {
     let got = {};
     try { got = JSON.parse(await hc(["get", t.address, "--json"])); } catch { /* gone since ls: no labels */ }
-    return { address: t.address, cwd: t.cwd, status: t.status ?? null, labels: got.labels ?? {}, parent: t.parent ?? null, doing: got.status?.msg ?? "" };
+    return { address: t.address, cwd: t.cwd, status: t.status ?? null, labels: got.labels ?? {}, parent: t.parent ?? null, agent: t.agent ?? null, doing: got.status?.msg ?? "" };
   }));
 }
 
@@ -41,6 +41,7 @@ export default class Pipeline extends View {
   init(_props, cx) {
     this.rows = [];
     this.starting = []; // keys launched whose coder doesn't report yet (or waits on a dialog of Claude's)
+    this.restarting = new Map(); // key -> when its coder was relaunched: shown, and ↵ waits for it
     this.sel = null; // the chosen ticket's key
     this.agent = "coder"; // or "reviewer"
     this.reading = false; // a pass is on: the next one waits its turn
@@ -86,6 +87,7 @@ export default class Pipeline extends View {
         const tickets = shared(TICKETS) ?? {};
         const terms = await terminalsIn(Object.values(tickets).map((t) => t.path));
         this.rows = rowsOf(tickets, terms);
+        for (const r of this.rows) if (r.coder.status || Date.now() - this.restarting.get(r.key) > RELAUNCH) this.restarting.delete(r.key);
         const noCoder = gone(tickets, terms);
         const alive = (key) => terms.some((t) => under(t.cwd, tickets[key].path));
         const young = (key) => Date.now() - Date.parse(tickets[key].at) <= YOUNG;
@@ -131,6 +133,34 @@ export default class Pipeline extends View {
       try { await hc(["send", row.coder.address, RESUME]); this.refresh(cx); }
       catch (e) { this.error = String(e.message ?? e); cx.notify(); }
     });
+  }
+
+  // A coder cut by a restart of the machine: Claude again in its terminal, on its own
+  // conversation. Only on ↵, never by itself: it runs in auto mode.
+  restart(row, cx) {
+    if (this.restarting.has(row.key)) return;
+    this.restarting.set(row.key, Date.now());
+    cx.spawn(async (cx) => {
+      try {
+        // A reviewer cut too keeps its name with a bare shell: the coder couldn't start another under it.
+        if (row.reviewer && !row.reviewer.status) await hc(["kill", row.reviewer.address]).catch(() => {}); // closed since the last refresh
+        await hc(["send", row.coder.address, restartCommand(row)]);
+        this.refresh(cx);
+      } catch (e) { this.restarting.delete(row.key); this.error = String(e.message ?? e); cx.notify(); }
+    });
+  }
+
+  // ↵ on a ticket: relaunch a coder cut short, answer a question, or open the agent's terminal.
+  // A question is told only to a Claude: typed in a shell left by a restart, it is a command.
+  action(row) {
+    return restartable(row) ? "restart" : row.state === "question" && row.coder.status ? "resume" : "open";
+  }
+
+  go(row, cx) {
+    const a = this.action(row);
+    if (a === "restart") this.restart(row, cx);
+    else if (a === "resume") this.resume(row, cx);
+    else this.open(row);
   }
 
   // The second view: the open tickets of the repo, read once per opening of the dialog.
@@ -310,7 +340,7 @@ export default class Pipeline extends View {
     if (e.key === "down" || e.key === "up") { this.sel = this.rows[(at + (e.key === "down" ? 1 : this.rows.length - 1)) % this.rows.length].key; this.agent = "coder"; }
     else if (e.key === "left") this.agent = "coder";
     else if (e.key === "right") this.agent = "reviewer";
-    else if (e.key === "enter") row.state === "question" ? this.resume(row, cx) : this.open(row);
+    else if (e.key === "enter") this.go(row, cx);
     else if (e.key === "o") this.open(row);
     else return;
     cx.stop_propagation();
@@ -414,17 +444,21 @@ export default class Pipeline extends View {
       if (!term) return ["pas encore lancé", t.dim];
       if (term.status === "working") return ["en cours", t.working];
       if (term.status === "blocked") return ["attend une réponse de ta part", t.blocked];
+      if (mine && !term.status && row.state !== "ready") return ["coupé, à relancer", t.blocked];
       if (mine && row.state === "question") return ["attend la réponse de l'auteur", t.blocked];
       if (row.state === "ready" || (mine && row.stage === "review")) return ["terminé", t.done];
       return ["arrêté", mine ? t.blocked : t.muted];
     };
     const detail = (row) => {
       const active = this.chosen(row);
-      const doing = row.state === "question"
+      const cut = !row.coder.status && row.state !== "ready";
+      const doing = cut
+        ? ["Agent code, coupé", this.restarting.has(row.key) ? "Relancé : Claude reprend sa conversation dans son terminal…" : restartable(row) ? "Son agent ne tourne plus (machine redémarrée ?) et il n'avait pas fini. ↵ le relance dans son terminal, sur sa propre conversation, en mode auto : il reprend à son étape, et relance son relecteur s'il le faut." : row.session ? "Son agent ne donne pas d'état et son terminal n'est pas un shell connu : il démarre peut-être. Ouvre son terminal pour voir." : "Son agent ne tourne plus (machine redémarrée ?) et il n'avait pas fini. Lancé avant que le pipeline retienne sa conversation : ouvre son terminal et tape `claude --resume` pour choisir la sienne (pas `--continue`, qui peut reprendre celle du relecteur)."]
+        : row.state === "question"
         ? ["Question posée à l'auteur du ticket, en commentaire Jira", "Le ticket est en attente. Si tu connais la réponse, écris-la dans le terminal de l'agent ; sinon « Reprendre » lui dit de relire le ticket quand l'auteur a répondu."]
         : row.state === "ready"
           ? ["Terminé", row.questions ? `La PR est ouverte, avec ${row.questions} question${row.questions > 1 ? "s" : ""} en commentaire${row.questions > 1 ? "s" : ""}.` : "La PR est ouverte, sans question en attente."]
-          : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (!row.coder.status ? "Son agent ne tourne plus (machine redémarrée ?) et il n'avait pas fini. Ouvre son terminal et tape `claude --continue` pour qu'il reprenne." : row.state === "look" ? "À l'arrêt sans avoir fini. Il attend peut-être une commande lancée en arrière-plan (build, CI) et reprendra seul ; sinon ouvre son terminal." : "…")];
+          : [active === row.coder ? "Agent code, en ce moment" : "Agent review, en ce moment", active.doing || (row.state === "look" ? "À l'arrêt sans avoir fini. Il attend peut-être une commande lancée en arrière-plan (build, CI) et reprendra seul ; sinon ouvre son terminal." : "…")];
       return [
         div().text_size(15).font_semibold().text_color(t.foreground).child(`${row.key} · ${row.title}`),
         div().text_size(12).text_color(t.muted).child(row.repo ? `${row.repo} · ${row.branch}` : row.branch),
@@ -452,11 +486,10 @@ export default class Pipeline extends View {
       .when(this.starting.length > 0, (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child(`Lancé${this.starting.length > 1 ? "s" : ""} sans agent visible : ${this.starting.join(", ")}. Claude attend peut-être une réponse dans son terminal.`)))
       .when(Boolean(sel && this.error), (el) => el.child(div().pt(8).text_size(12).text_color(t.blocked).child(this.error)))
       .child(h_flex().pt(14).gap(12).items_center()
-        .child(div().text_size(12).text_color(t.dim).child(!sel ? "" : sel.state === "question" ? "↑↓ ticket · o ouvrir le terminal" : "↑↓ ticket · ←→ agent"))
+        .child(div().text_size(12).text_color(t.dim).child(!sel ? "" : this.action(sel) !== "open" ? "↑↓ ticket · o ouvrir le terminal" : "↑↓ ticket · ←→ agent"))
         .child(div().flex_1())
         .child(button("pipeline-close", "Fermer", "esc", false, () => this.close()))
         .child(button("pipeline-new", "Choisir des tickets", "n", !sel, (cx) => { this.openPick(cx); cx.notify(); }))
-        .when(Boolean(sel && sel.state === "question"), (el) => el.child(button("pipeline-go", "Reprendre avec la réponse Jira", "↵", true, (cx) => this.resume(sel, cx))))
-        .when(Boolean(sel && sel.state !== "question"), (el) => el.child(button("pipeline-go", this.chosen(sel) === sel.coder ? "Ouvrir l'agent code" : "Ouvrir l'agent review", "↵", true, () => this.open(sel)))));
+        .when(Boolean(sel), (el) => el.child(button("pipeline-go", { restart: "Relancer l'agent code", resume: "Reprendre avec la réponse Jira" }[this.action(sel)] ?? (this.chosen(sel) === sel.coder ? "Ouvrir l'agent code" : "Ouvrir l'agent review"), "↵", true, (cx) => this.go(sel, cx)))));
   }
 }

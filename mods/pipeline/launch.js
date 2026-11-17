@@ -6,10 +6,11 @@
 // never a ticket someone else has. Where a repo's tickets are is the pipeline's own answer,
 // kept in its config.json: start-work's is not read.
 
+import { randomUUID } from "crypto";
 import { exec, home, appHome, readTextFile, writeTextFile, notify, run, shared, setShared } from "herdr";
 import { branchFor, ticketSource, ticketQueries, sourceLabel, boardFilters, coderArgv, coderTask } from "./lib.js";
 
-export const TICKETS = "pipeline.tickets"; // { key, title, repo, branch, path, at } by key
+export const TICKETS = "pipeline.tickets"; // { key, title, repo, branch, path, session, at } by key
 const FIELDS = "key,summary,status,assignee";
 // { jira: { <repo>: source | [sources] }, branch_formats: { <repo>: "feat/{key}-{slug}" }, jira_start_status, jira_waiting_status }
 const CONFIG = () => `${appHome()}/mods/pipeline/config.json`;
@@ -135,7 +136,8 @@ export async function start(from, me, s) {
   // A workflow without that status shouldn't block the work: say so and go on.
   try { await acli(["workitem", "transition", "--key", s.key, "--status", from.startStatus, "--yes"]); }
   catch (e) { notify({ title: `${s.key} t'est assigné, mais n'est pas passé « ${from.startStatus} »`, body: String(e.message ?? e), level: "warning" }); }
-  setShared(TICKETS, { ...(shared(TICKETS) ?? {}), [s.key]: { key: s.key, title: s.title, repo: from.repo.name, branch, path, at: new Date().toISOString() } });
-  run("space.new", { folder: path, tab: "claude", argv: coderArgv(), task: coderTask(s, { branch, waitingStatus: from.waitingStatus }) });
+  const session = randomUUID(); // its conversation, for a restart to resume (lib.js: restartCommand)
+  setShared(TICKETS, { ...(shared(TICKETS) ?? {}), [s.key]: { key: s.key, title: s.title, repo: from.repo.name, branch, path, session, at: new Date().toISOString() } });
+  run("space.new", { folder: path, tab: "claude", argv: coderArgv(session), task: coderTask(s, { branch, waitingStatus: from.waitingStatus }) });
   return branch;
 }
