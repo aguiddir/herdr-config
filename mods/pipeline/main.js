@@ -67,13 +67,10 @@ export default class Pipeline extends View {
     this.report = []; // why a ticked ticket got no coder
     this.busy = false;
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
-    // Tab never reaches on_key_down: the app's keymap takes it. A binding of ours does, kept
-    // in the app's keymap past the dialog and a reload of the mod: bound once.
-    const app = /** @type {any} */ (globalThis);
-    if (!app.pipelineTabKey) {
-      try { cx.bind_keys([{ keystroke: "tab", action: "pipeline_tab", context: "Pipeline" }]); app.pipelineTabKey = true; }
-      catch { /* n and a still switch */ }
-    }
+    // Tab never reaches on_key_down: the app's keymap takes it. A binding of ours does. Bound
+    // at every opening: reloading keys.json empties the app's keymap of what mods bound.
+    try { cx.bind_keys([{ keystroke: "tab", action: "pipeline_tab", context: "Pipeline" }]); }
+    catch { /* n and a still switch */ }
     this.handle = cx.focus_handle();
     this.handle.focus();
     cx.timer.after(600, () => !this.adding && this.handle.focus()); // not over the source field

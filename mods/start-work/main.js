@@ -81,15 +81,11 @@ export default class StartWork extends View {
     // The focused Input binds tab itself, and bindings run before on_key_down:
     // a binding of ours, at the Input's depth, comes first.
     // Only the search field's: in the branch or source field, tab would change the row and
-    // overwrite what is being typed. The keymap is the app's and outlives the dialog (and,
-    // like globalThis, a reload of the mod): bind once, once it worked; say if it didn't.
-    const app = /** @type {any} */ (globalThis);
-    if (!app.startWorkTabKeys) {
-      try {
-        for (const context of ["StartWork", "StartWorkSearch > Input"]) cx.bind_keys([{ keystroke: "tab", action: "sw_next_tab", context }, { keystroke: "shift-tab", action: "sw_prev_tab", context }]);
-        app.startWorkTabKeys = true;
-      } catch (e) { notify({ title: "start-work : tab ne changera pas d'onglet dans la recherche", body: String(e.message ?? e), level: "warning" }); }
-    }
+    // overwrite what is being typed. Bound at every opening, as Herdr's own win98 menu does:
+    // the keymap is the app's, and reloading keys.json empties it of what mods bound.
+    try {
+      for (const context of ["StartWork", "StartWorkSearch > Input"]) cx.bind_keys([{ keystroke: "tab", action: "sw_next_tab", context }, { keystroke: "shift-tab", action: "sw_prev_tab", context }]);
+    } catch (e) { notify({ title: "start-work : tab ne changera pas d'onglet dans la recherche", body: String(e.message ?? e), level: "warning" }); }
     this.scroll = VirtualListScrollHandle.new(); // keeps the row chosen with the arrows on screen
     cx.spawn(async (cx) => this.load(cx));
   }
