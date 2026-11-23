@@ -105,19 +105,22 @@ Le build Jenkins de la branche de chaque terminal, à la place de la bande `ci-w
 
 **La puce.** Dans l'en-tête d'un terminal dont la branche a un build en cours, réussi depuis moins de 15 minutes, ou en échec (celui-là reste jusqu'au build suivant) : un point par étape, puis l'étape en cours et sa progression (`Tests · 62 %`), `réussi`, ou l'étape qui a cassé (`échec à Build`). Le build est celui du job de la branche, sinon celui de sa PR (`PR-<n>`, trouvée par `gh`). Un terminal hors d'un dépôt de l'organisation configurée, ou sans job, n'a pas de puce.
 
+**Sonar et les autres checks.** La quality gate Sonar n'est pas dans Jenkins : son étape Sonar envoie l'analyse et passe au vert, la gate arrive ensuite sur GitHub comme check du commit. Une fois le build fini, le mod lit donc aussi les checks GitHub du commit poussé (`gh api …/check-runs`). Si l'un est en échec alors que Jenkins est vert, la puce est rouge (`échec SonarCloud Code Analysis`) et reste jusqu'au prochain build.
+
 **La fiche.** Un clic sur la puce, ou `ctrl-shift-i` pour le terminal qui a le focus (même sans puce : le dernier build, quel que soit son âge) :
 
 - les étapes avec leur durée ; celles que Jenkins a sautées après un échec sont « non lancé » ;
+- chaque check GitHub en échec, avec ce qu'il rapporte (pour Sonar, les conditions non tenues : `56.7% Coverage on New Code (required ≥ 80%)`) ; `s` ouvre son rapport ;
 - pour un build en échec, un extrait du log : chaque ligne d'erreur avec les 8 lignes qui la précèdent et les 3 qui la suivent, puis les 30 dernières lignes ; `⋯ n lignes ⋯` marque ce qui est coupé (400 lignes au plus) ;
 - `↑` `↓` passent d'une erreur à l'autre, `o` ouvre le build dans Jenkins, `esc` ferme ;
-- `↵` (ou le bouton « Corriger avec Claude ») envoie l'échec et cet extrait au Claude de ce terminal ; si le terminal n'est pas un agent, un onglet `claude` s'ouvre dans le même dossier avec ce prompt.
+- `↵` (ou le bouton « Corriger avec Claude ») envoie l'échec, cet extrait et les checks en échec au Claude de ce terminal ; si le terminal n'est pas un agent, un onglet `claude` s'ouvre dans le même dossier avec ce prompt.
 
 | ![Build en échec](mods/ci/preview.png) | ![Build en cours](mods/ci/preview-running.png) |
 |---|---|
 
 Les captures viennent d'un faux Jenkins : dépôt, branches et log sont inventés.
 
-Jenkins est lu sans jeton, donc avec le VPN : sans lui la fiche dit « Jenkins injoignable (VPN ?) » et la puce garde ce qu'elle montrait. Chaque en-tête interroge Jenkins toutes les 10 secondes pendant un build, une fois par minute sinon. Un `git checkout` dans le même dossier est donc vu à la minute suivante (la fiche, elle, relit toujours la branche). Quel Jenkins lire est dans `mods/ci/config.json`, qui n'est pas versionné ; sans lui, pas de puce, et la fiche dit qu'il manque :
+Jenkins est lu sans jeton, donc avec le VPN : sans lui la fiche dit « Jenkins injoignable (VPN ?) » et la puce garde ce qu'elle montrait. Chaque en-tête interroge Jenkins toutes les 10 secondes pendant un build, une fois par minute sinon. Un `git checkout` dans le même dossier est donc vu à la minute suivante (la fiche, elle, relit toujours la branche). Les checks GitHub sont redemandés toutes les 2 minutes tant qu'ils peuvent bouger, toutes les 30 minutes ensuite. Quel Jenkins lire est dans `mods/ci/config.json`, qui n'est pas versionné ; sans lui, pas de puce, et la fiche dit qu'il manque :
 
 ```json
 { "jenkins": "https://jenkins.example.com", "folder": "job/team/job/github", "org": "acme" }
@@ -125,7 +128,7 @@ Jenkins est lu sans jeton, donc avec le VPN : sans lui la fiche dit « Jenkins i
 
 `folder` est le dossier Jenkins des jobs multibranches, un par dépôt, nommés comme eux ; `org` est l'organisation GitHub dont les dépôts y sont construits.
 
-Le mod ne lit pas Sonar, ne relance pas de build et ne corrige rien tout seul : c'est le rôle du mod `pr-agents`.
+Le mod ne relance pas de build et ne corrige rien tout seul : c'est le rôle du mod `pr-agents`. Il ne lit pas l'API de Sonar non plus, seulement ce que Sonar écrit sur GitHub.
 
 ## Prérequis
 
