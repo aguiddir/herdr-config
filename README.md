@@ -13,6 +13,7 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `layouts/mine.json` | mon layout : `main` plus le tiroir des PR et l'en-tête de terminal qui porte la CI |
 | `mods/pipeline/` | lancer des agents sur des tickets Jira et voir où ils en sont : codeur, relecteur, PR (`ctrl-shift-a`) |
 | `mods/ci/` | le build Jenkins de la branche de chaque terminal : une puce dans son en-tête, et la fiche du build (`ctrl-shift-i`) |
+| `mods/projects/` | ouvrir un space sur un dépôt de `~/PycharmProjects` ou `~/IdeaProjects` en tapant quelques lettres, ou aller à celui déjà ouvert (`ctrl-shift-r`), d'après le mod de [jcgay](https://github.com/jcgay/dotfiles/tree/ac3fe8758dcce6bdb0044fc2ff3ed2ddf0886df3/.config/herdr-app/mods/projects) |
 | `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
 
 ## start-work

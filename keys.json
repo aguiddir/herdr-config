@@ -62,7 +62,8 @@
     "ctrl-shift-m": "mod.open:clean-merged",
     "ctrl-shift-g": "mod.open:pr-inbox",
     "ctrl-shift-a": "mod.open:pipeline",
-    "ctrl-shift-i": "mod.open:ci"
+    "ctrl-shift-i": "mod.open:ci",
+    "ctrl-shift-r": "mod.open:projects"
   },
   "terminal": {
     "ctrl-backspace": "send:\u0017",

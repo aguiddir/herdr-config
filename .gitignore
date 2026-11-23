@@ -17,9 +17,11 @@
 !/mods/pr-inbox/
 !/mods/pipeline/
 !/mods/ci/
+!/mods/projects/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
 /mods/pipeline/config.json
 /mods/ci/config.json
+/mods/projects/.icons/
 .superpowers/
