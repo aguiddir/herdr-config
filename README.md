@@ -10,8 +10,9 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
 | `mods/pr-inbox/` | les PR GitHub qui m'attendent : un tiroir sur le bord droit, un toast quand une review tombe, et un Claude lancé sur la PR (`ctrl-shift-g`) |
-| `layouts/mine.json` | mon layout : `main` plus le tiroir des PR |
+| `layouts/mine.json` | mon layout : `main` plus le tiroir des PR et l'en-tête de terminal qui porte la CI |
 | `mods/pipeline/` | lancer des agents sur des tickets Jira et voir où ils en sont : codeur, relecteur, PR (`ctrl-shift-a`) |
+| `mods/ci/` | le build Jenkins de la branche de chaque terminal : une puce dans son en-tête, et la fiche du build (`ctrl-shift-i`) |
 | `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
 
 ## start-work
@@ -95,6 +96,36 @@ Le dépôt local d'une PR est retrouvé par l'`origin` des espaces ouverts et de
 ```json
 "repos": { "softwarevidal/renoshield": "/home/moi/IdeaProjects/renoshield" }
 ```
+
+## ci
+
+Le build Jenkins de la branche de chaque terminal, à la place de la bande `ci-watch` de Claude Code. Le mod est un clone de l'en-tête de terminal de Herdr (`pane`) : `layouts/mine.json` le pose comme `header` des panes.
+
+![Les trois états de la puce](mods/ci/preview-chips.png)
+
+**La puce.** Dans l'en-tête d'un terminal dont la branche a un build en cours, réussi depuis moins de 15 minutes, ou en échec (celui-là reste jusqu'au build suivant) : un point par étape, puis l'étape en cours et sa progression (`Tests · 62 %`), `réussi`, ou l'étape qui a cassé (`échec à Build`). Le build est celui du job de la branche, sinon celui de sa PR (`PR-<n>`, trouvée par `gh`). Un terminal hors d'un dépôt de l'organisation configurée, ou sans job, n'a pas de puce.
+
+**La fiche.** Un clic sur la puce, ou `ctrl-shift-i` pour le terminal qui a le focus (même sans puce : le dernier build, quel que soit son âge) :
+
+- les étapes avec leur durée ; celles que Jenkins a sautées après un échec sont « non lancé » ;
+- pour un build en échec, un extrait du log : chaque ligne d'erreur avec les 8 lignes qui la précèdent et les 3 qui la suivent, puis les 30 dernières lignes ; `⋯ n lignes ⋯` marque ce qui est coupé (400 lignes au plus) ;
+- `↑` `↓` passent d'une erreur à l'autre, `o` ouvre le build dans Jenkins, `esc` ferme ;
+- `↵` (ou le bouton « Corriger avec Claude ») envoie l'échec et cet extrait au Claude de ce terminal ; si le terminal n'est pas un agent, un onglet `claude` s'ouvre dans le même dossier avec ce prompt.
+
+| ![Build en échec](mods/ci/preview.png) | ![Build en cours](mods/ci/preview-running.png) |
+|---|---|
+
+Les captures viennent d'un faux Jenkins : dépôt, branches et log sont inventés.
+
+Jenkins est lu sans jeton, donc avec le VPN : sans lui la fiche dit « Jenkins injoignable (VPN ?) » et la puce garde ce qu'elle montrait. Chaque en-tête interroge Jenkins toutes les 10 secondes pendant un build, une fois par minute sinon. Un `git checkout` dans le même dossier est donc vu à la minute suivante (la fiche, elle, relit toujours la branche). Quel Jenkins lire est dans `mods/ci/config.json`, qui n'est pas versionné ; sans lui, pas de puce, et la fiche dit qu'il manque :
+
+```json
+{ "jenkins": "https://jenkins.example.com", "folder": "job/team/job/github", "org": "acme" }
+```
+
+`folder` est le dossier Jenkins des jobs multibranches, un par dépôt, nommés comme eux ; `org` est l'organisation GitHub dont les dépôts y sont construits.
+
+Le mod ne lit pas Sonar, ne relance pas de build et ne corrige rien tout seul : c'est le rôle du mod `pr-agents`.
 
 ## Prérequis
 

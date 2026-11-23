@@ -16,8 +16,10 @@
 !/mods/clean-merged/
 !/mods/pr-inbox/
 !/mods/pipeline/
+!/mods/ci/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json
 /mods/pipeline/config.json
+/mods/ci/config.json
 .superpowers/
