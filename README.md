@@ -10,7 +10,8 @@ Ma configuration de [Herdr](https://herdr.dev). Le repo vit directement dans `~/
 | `install.sh` | installe et vérifie ce dont les mods ont besoin |
 | `mods/clean-merged/` | le panneau qui supprime les branches et worktrees des PR mergées (`ctrl-shift-m`) |
 | `mods/pr-inbox/` | les PR GitHub qui m'attendent : un tiroir sur le bord droit, un toast quand une review tombe, et un Claude lancé sur la PR (`ctrl-shift-g`) |
-| `layouts/mine.json` | mon layout : `main` plus le tiroir des PR et l'en-tête de terminal qui porte la CI |
+| `layouts/mine.json` | mon layout : `main` plus le tiroir des PR, l'en-tête de terminal qui porte la CI et le panneau `pr-agents` à côté des terminaux |
+| `mods/panel-toggle/` | le bouton PR qui replie et rouvre le panneau `pr-agents` (`ctrl-shift-r`) |
 | `mods/pipeline/` | lancer des agents sur des tickets Jira et voir où ils en sont : codeur, relecteur, PR (`ctrl-shift-a`) |
 | `mods/ci/` | le build Jenkins de la branche de chaque terminal : une puce dans son en-tête, et la fiche du build (`ctrl-shift-i`) |
 | `hc-templates/` | les rôles herdr-core que `install.sh` installe : le relecteur du pipeline |
@@ -130,6 +131,12 @@ Jenkins est lu sans jeton, donc avec le VPN : sans lui la fiche dit « Jenkins i
 
 Le mod ne relance pas de build et ne corrige rien tout seul : c'est le rôle du mod `pr-agents`. Il ne lit pas l'API de Sonar non plus, seulement ce que Sonar écrit sur GitHub.
 
+## Le panneau pr-agents
+
+Le mod `pr-agents` vient du [harnais](https://github.com/softwarevidal/harnais) (PR, surveillance des PR, journal). Herdr le pose au bord de la fenêtre, à côté de la barre d'onglets, où il se lit comme une fenêtre collée. Dans `mine.json` son bloc est dans `work-body`, à droite des terminaux : il reste ouvert d'un espace à l'autre, la barre d'onglets ne le referme pas.
+
+Le bouton PR, en haut de la colonne `gutter`, le replie et le rouvre, comme `ctrl-shift-r` (`layout.toggle:pr-agents`, dans la section `layout:mine` de `keys.json` : les autres layouts n'ont pas ce bloc). C'est le mod `panel-toggle` : un bouton pour un nœud du layout, donné par ses props `{ "target": "<id du nœud>", "label": "PR" }`. Replié, le panneau continue de surveiller.
+
 ## Prérequis
 
 ```bash
@@ -156,7 +163,9 @@ git fetch origin && git checkout -f main
 ./install.sh
 ```
 
-Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. Herdr ne permet pas d'étendre un layout fourni : `mine.json` est une copie de son `main.json` plus deux ajouts, la colonne `gutter` de 50 px dans `work-body` et le bloc `floating`. Quand Herdr change `main.json`, refaire la copie : `diff layouts/main.json layouts/mine.json` ne doit montrer que ces deux ajouts.
+Ce dépôt ne versionne pas le mod `pr-agents` : il vient du [harnais](https://github.com/softwarevidal/harnais). Installer d'abord le harnais avec son `install.sh`, ou lancer une fois Claude Code avec son plugin, qui met ses mods à jour à chaque démarrage. Vérifier que `~/.config/herdr-app/mods/pr-agents/` existe, et seulement ensuite passer sur `mine`. La première fois que Herdr voit le dossier d'un mod, il en ajoute une copie au layout affiché (`"place": "right"` dans son `mod.json`). Si `mine` est affiché à ce moment, il risque d'avoir deux copies du panneau, et `layout.toggle` n'en replierait qu'une. Sans le mod, `mine` affiche un bloc vide de 420 px.
+
+Puis `ctrl-shift-l` jusqu'au layout `mine`, celui qui porte le tiroir des PR. Herdr ne permet pas d'étendre un layout fourni : `mine.json` est une copie de son `main.json` avec quatre changements : la colonne `gutter` de 50 px dans `work-body` (elle porte le bouton PR), le bloc `floating`, le bloc `pr-agents` dans `work-body` à droite des terminaux, et l'en-tête des terminaux, qui affiche le mod `ci` au lieu de `pane` (la pastille Jenkins). Quand Herdr change `main.json`, refaire la copie : `diff layouts/main.json layouts/mine.json` ne doit montrer que ces quatre changements.
 
 ## pipeline
 

@@ -133,6 +133,18 @@
               }
             },
             {
+              "id": "pr-agents",
+              "type": "block",
+              "content": {
+                "mod": "pr-agents"
+              },
+              "size": {
+                "px": 420
+              },
+              "min": 280,
+              "max": 900
+            },
+            {
               "id": "panel",
               "type": "column",
               "hidden": true,
@@ -172,7 +184,22 @@
                 "px": 50
               },
               "resizable": false,
-              "children": []
+              "children": [
+                {
+                  "id": "pr-agents-toggle",
+                  "type": "block",
+                  "size": {
+                    "px": 26
+                  },
+                  "content": {
+                    "mod": "panel-toggle",
+                    "props": {
+                      "target": "pr-agents",
+                      "label": "PR"
+                    }
+                  }
+                }
+              ]
             }
           ]
         },
