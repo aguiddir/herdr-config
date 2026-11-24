@@ -137,6 +137,10 @@ Le mod `pr-agents` vient du [harnais](https://github.com/softwarevidal/harnais) 
 
 Le bouton PR, en haut de la colonne `gutter`, le replie et le rouvre, comme `ctrl-shift-r` (`layout.toggle:pr-agents`, dans la section `layout:mine` de `keys.json` : les autres layouts n'ont pas ce bloc). C'est le mod `panel-toggle` : un bouton pour un nœud du layout, donné par ses props `{ "target": "<id du nœud>", "label": "PR" }`. Replié, le panneau continue de surveiller.
 
+| Ouvert, à droite des terminaux | Replié : le bouton PR reste en haut à droite |
+|---|---|
+| ![Panneau ouvert](mods/panel-toggle/preview.png) | ![Panneau replié](mods/panel-toggle/preview-folded.png) |
+
 ## Prérequis
 
 ```bash
