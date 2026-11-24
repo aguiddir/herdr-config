@@ -17,6 +17,7 @@
 !/mods/pr-inbox/
 !/mods/pipeline/
 !/mods/ci/
+!/mods/panel-toggle/
 /mods/*/gpui-kit.d.ts
 /mods/*/herdr.d.ts
 /mods/*/jsconfig.json

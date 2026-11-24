@@ -64,6 +64,9 @@
     "ctrl-shift-a": "mod.open:pipeline",
     "ctrl-shift-i": "mod.open:ci"
   },
+  "layout:mine": {
+    "ctrl-shift-r": "layout.toggle:pr-agents"
+  },
   "terminal": {
     "ctrl-backspace": "send:\u0017",
     "ctrl-left": "send:\u001bb",
